@@ -17,10 +17,10 @@ This repository contains the code and the research-decision records only; raw pa
 
 `R/Fintech_Project.R` is the original (v1) monolithic script; `R/v2/` and `python/v2/` are the refactored, config-driven version used for the European-data re-run.
 
-## How Claude Code is used
+## How Claude is used
 
-Research decisions, rejected alternatives, and hand-off notes are kept as markdown in `CLAUDE.md` and `docs/`, so every session starts with the full decision history instead of a blank context.
-Claude Code reads that context, runs and iterates the R/Python pipeline, and writes its results back into the same records (`docs/methodology-decisions.md` shows the B-1 / B-2 / B-3 loops as they actually happened).
+Research design, methodology decisions, and code iteration were carried out through conversations with Claude (Projects).
+The resulting decisions, rejected alternatives, and hand-off notes are recorded in `CLAUDE.md` and `docs/`, so each new session starts from the full decision history (`docs/methodology-decisions.md` shows the B-1 / B-2 / B-3 loops as they actually happened).
 The human owns the research questions, method choices, and validation of every number; Claude owns the repetitive execution, refactoring, and bookkeeping.
 
 ## Data
