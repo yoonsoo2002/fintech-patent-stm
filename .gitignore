@@ -1,0 +1,29 @@
+# data / derived artifacts
+*.csv
+*.xlsx
+*.xlsb
+*.rds
+*.RData
+*.RDataTmp*
+*.parquet
+*.npy
+*.pkl
+*.ipynb
+data/raw/
+data/*
+!data/README.md
+
+# secrets / env
+.Renviron
+.env
+.env.*
+
+# R / Python junk
+.Rhistory
+.Rproj.user/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
