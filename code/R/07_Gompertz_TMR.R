@@ -105,7 +105,7 @@ p_tmr <- ggplot(dc, aes(Topic, TMR_pct, fill=Cluster_Full)) +
   scale_y_continuous(breaks=seq(ylo,yhi,by=5), labels=function(x) paste0(x,"%")) +
   coord_cartesian(ylim=c(ylo,yhi)) +     # ★줌은 여기서만 (scale_y limits 금지)
   labs(title="Final TMR Portfolio with 8 Mega Clusters (Gompertz-based)",
-       subtitle="Thresholds = Q1/Q3 of Gompertz TMR (Choi & Woo, 2022)",
+       subtitle="Thresholds = Q1 (Choi & Woo, 2022) and Q3 (this study) of Gompertz TMR",
        x="FinTech Topics (Ordered by Maturity)", y="Technology Maturity Rate (TMR, %)") +
   theme_minimal(base_size=13) +
   theme(plot.title=element_text(face="bold",size=16,hjust=.5),
