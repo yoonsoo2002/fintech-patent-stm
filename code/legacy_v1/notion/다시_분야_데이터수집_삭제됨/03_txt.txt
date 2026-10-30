@@ -1,0 +1,4 @@
+("investment management" AND (portfolio OR fund OR securities))
+OR ("investment platform" AND (portfolio OR brokerage OR securities))
+OR (("sustainable finance" OR "green fintech")
+    AND (portfolio OR bond OR fund OR securities))

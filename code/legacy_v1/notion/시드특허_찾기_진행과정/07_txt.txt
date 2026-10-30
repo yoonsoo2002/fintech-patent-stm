@@ -1,0 +1,17 @@
+class_cpc.symbol:("H04L9/50" OR "G06Q20/06")
+AND
+(
+  title:(
+    Bitcoin OR Cryptocurrency
+    OR DeFi OR "Decentralized Finance"
+    OR NFT OR "Non-Fungible Token"
+    OR "Digital Currency"
+  )
+  OR
+  abstract:(
+    Bitcoin OR Cryptocurrency
+    OR DeFi OR "Decentralized Finance"
+    OR NFT OR "Non-Fungible Token"
+    OR "Digital Currency"
+  )
+)

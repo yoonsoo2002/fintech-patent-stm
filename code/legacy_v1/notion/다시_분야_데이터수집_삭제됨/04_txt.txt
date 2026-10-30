@@ -1,0 +1,15 @@
+(
+  "artificial intelligence"
+  OR AI
+  OR "machine learning"
+  OR ML
+  OR "big data"
+  OR algorithm
+  OR automation
+  OR API
+  OR "application programming interface"
+  OR blockchain
+  OR "blockchain-based"
+  OR tokenization
+  OR ("security token" AND (STO OR securities OR offering))
+)

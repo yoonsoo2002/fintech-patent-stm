@@ -1,0 +1,21 @@
+class_cpc.symbol:"G06Q40/08"
+AND
+(
+  title:(
+    InsurTech
+    OR (Insurance AND "Machine Learning")
+    OR ("Insurance premium" AND "Machine learning")
+    OR ("Insurance policy" AND Chatbot)
+    OR ("Smart contract" AND Insurance)
+    OR ("Predictive analytics" AND "Insurance premium")
+  )
+  OR
+  abstract:(
+    InsurTech
+    OR (Insurance AND "Machine Learning")
+    OR ("Insurance premium" AND "Machine learning")
+    OR ("Insurance policy" AND Chatbot)
+    OR ("Smart contract" AND Insurance)
+    OR ("Predictive analytics" AND "Insurance premium")
+  )
+)

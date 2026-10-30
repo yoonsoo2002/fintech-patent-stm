@@ -1,0 +1,443 @@
+[ 불용어 처리를 위한 코드 searchk까지 한 다음 단어 확인 ] 
+# 1. 패키지 설치 (최초 1회만 실행하면 됩니다)
+install.packages("stm")
+install.packages("stringr")
+install.packages("stopwords") # 오타 수정 완료
+
+# 2. 패키지 로드 (RStudio를 새로 켤 때마다 실행해야 합니다)
+library(stm)
+library(stringr)
+library(stopwords)
+
+# 3. 데이터 불러오기 (경로의 \를 /로 모두 수정했습니다)
+# 지정해주신 절대 경로를 사용하여 파일을 불러옵니다.
+file_path <- "C:/Users/gram/Documents/핀테크 특허 분석/데이터 임베딩완료/final_fintech_patents_filtered.csv"
+mydata5 <- read.csv(file_path, fileEncoding="UTF-8", stringsAsFactors=FALSE)
+
+# 4. 텍스트 결합 (제목 가중치 2배 적용)
+mydata5$text_tt <- paste(mydata5$Title, mydata5$Title, mydata5$Abstract, sep=" ")
+
+# 5. 불용어 설정 (SMART 사전 + 커스텀)
+stwds <- stopwords(language = "en", source = "smart")
+custom <- c('invention', 'thereof', 'therefore', 'therefrom', 'system', 'method', 'apparatus', 'plurality', 'embodiment')
+csw <- c(stwds, custom)
+
+# 6. 전처리 (textProcessor) - 시간이 조금 걸릴 수 있습니다.
+proc1 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw, 
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+# 7. 데이터 정제 및 1% 희귀 단어 제거 (prepDocuments) 
+# 21,381건의 1%인 214로 lower.thresh 설정
+out1 <- prepDocuments(proc1$documents, 
+                      proc1$vocab, 
+                      proc1$meta, 
+                      lower.thresh = 214)
+# 살아남은 653개 단어 전체 목록 중 처음 100개만 눈으로 훑어보기
+head(out1$vocab, 100)
+
+# 특정 단어가 653개 안에 무사히 포함되어 있는지 검색해 보기 (TRUE가 나오면 살아있는 것)
+"generat" %in% out1$vocab
+"api" %in% out1$vocab
+"bank" %in% out1$vocab
+"open" %in% out1$vocab
+"neo" %in% out1$vocab
+"neobank" %in% out1$vocab
+# [1] K값 탐색을 위한 시드 고정 및 searchK 실행
+set.seed(2026) 
+
+# K를 10부터 80까지 10 단위로 탐색 (10, 20, 30, 40, 50, 60, 70, 80)
+# 알려주신 정확한 메타데이터 컬럼명을 prevalence 공식에 반영했습니다.
+kresult_stage1 <- searchK(documents = out1$documents, 
+                          vocab = out1$vocab, 
+                          K = seq(10, 80, by = 10), 
+                          prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                          data = out1$meta,
+                          max.em.its = 75,
+                          init.type = "Spectral")
+
+# [2] 지표 그래프 시각화
+# 이 코드를 실행하면 RStudio 우측 하단 Plots 창에 4가지 지표 그래프가 나타납니다.
+plot(kresult_stage1)
+# 현재까지 만들어진 모든 데이터를 하나의 파일로 묶어서 저장합니다.
+save.image("fintech_workspace.RData")
+
+# 패키지 장착
+library(stm)
+library(stringr)
+library(stopwords)
+plot(kresult_stage1)
+# [1] K=50으로 임시 STM 모델 학습 (노이즈 확인용)
+set.seed(2026) 
+temp_stm_50 <- stm(documents = out1$documents, 
+                   vocab = out1$vocab, 
+                   K = 50, 
+                   prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                   data = out1$meta,
+                   max.em.its = 75, # 임시 확인용이므로 빠르게 돌립니다
+                   init.type = "Spectral")
+
+# [2] 토픽별 상위 15개 단어 추출
+topic_words_50 <- labelTopics(temp_stm_50, n = 15)
+
+# [3] 결과를 엑셀(CSV) 파일로 저장하여 노이즈 단어 사냥하기
+top_words_df_50 <- as.data.frame(topic_words_50$prob)
+write.csv(top_words_df_50, "temp_k50_top_words_review.csv", row.names = TRUE)
+
+[ 커스텀 불용어 추가 다시 2차 seachk ] 
+
+# [1] 기존 불용어 + 새로 발견한 노이즈 단어들을 모두 합친 '최종 불용어 사전' 만들기
+stwds <- stopwords(language = "en", source = "smart")
+
+# 기존 단어들 + 찾아내신 단어들을 몽땅 집어넣습니다.
+custom_final <- c('invention', 'thereof', 'therefore', 'therefrom', 'system', 'method', 'apparatus', 'plurality', 'embodiment', 
+                  'compris', 'includ', 'provid', 'configur', 'contain', 
+                  'perform', 'generat', 'determin', 'obtain', 'receiv', 'send', 'transmit', 'store', 'process', 'execut', 'calcul', 'apply',
+                  'relat', 'base', 'present', 'disclos', 'step', 'mean', 'draw', 'figur', 'part', 'piec', 'field', 'technic', 'background', 'medium', 'mode', 'type', 'result', 'requir', 'prefer')
+
+csw_final <- c(stwds, custom_final)
+
+# [2] 강력해진 불용어 사전을 적용하여 텍스트 전처리 다시 하기 (시간이 조금 걸립니다!)
+# 기존 데이터와 헷갈리지 않게 이번 결과는 proc2, out2라는 새로운 이름으로 저장합니다.
+proc2 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw_final, 
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+# [3] 다시 1% 희귀 단어 제거 (214건 기준)
+out2 <- prepDocuments(proc2$documents, 
+                      proc2$vocab, 
+                      proc2$meta, 
+                      lower.thresh = 214)
+
+# (선택) 노이즈가 제거되고 최종적으로 살아남은 알짜배기 단어 개수 확인
+length(out2$vocab)
+
+# [4] 정말 깨끗해진 out2 데이터로 최종 K=50 모델 정식 학습!
+# 이번엔 최종 모델이므로 완성도를 높이기 위해 최대 반복 횟수(max.em.its)를 150으로 올립니다.
+set.seed(2026) 
+final_stm_50 <- stm(documents = out2$documents, 
+                    vocab = out2$vocab, 
+                    K = 50, 
+                    prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                    data = out2$meta,
+                    max.em.its = 150, 
+                    init.type = "Spectral")
+
+# [5] 최종 단어 추출 및 엑셀(CSV) 저장
+final_topic_words <- labelTopics(final_stm_50, n = 15)
+final_words_df <- as.data.frame(final_topic_words$prob)
+write.csv(final_words_df, "FINAL_K50_Clean_Topics.csv", row.names = TRUE)
+# [1] 질문자님이 직접 작성하신 '궁극의 특허 불용어 사전' 구성
+stwds <- stopwords(language = "en", source = "smart")
+
+# 작성해주신 모든 변형(ing, ed, s, tion 등)과 R의 축약형 잔재를 완벽히 묶었습니다.
+custom_ultimate <- c(
+  # 포함/구성 관련
+  'comprise', 'comprises', 'comprised', 'comprising', 'compris',
+  'include', 'includes', 'included', 'including', 'inclusion', 'inclusions', 'includ',
+  'provide', 'provides', 'provided', 'providing', 'provision', 'provisions', 'provid',
+  'configure', 'configures', 'configured', 'configuring', 'configuration', 'configurations', 'configur',
+  'contain', 'contains', 'contained', 'containing', 'container', 'containers',
+  
+  # 동작/수행 관련
+  'perform', 'performs', 'performed', 'performing', 'performance', 'performances',
+  'generate', 'generates', 'generated', 'generating', 'generation', 'generations', 'generator', 'generators', 'generat',
+  'determine', 'determines', 'determined', 'determining', 'determination', 'determinations', 'determin',
+  'obtain', 'obtains', 'obtained', 'obtaining', 'obtainable',
+  'receive', 'receives', 'received', 'receiving', 'receiver', 'receivers', 'receipt', 'receipts', 'receiv',
+  'send', 'sends', 'sent', 'sending', 'sender', 'senders',
+  'transmit', 'transmits', 'transmitted', 'transmitting', 'transmission', 'transmissions', 'transmitter', 'transmitters',
+  'store', 'stores', 'stored', 'storing', 'storage', 'storages',
+  'process', 'processes', 'processed', 'processing', 'processor', 'processors',
+  'execute', 'executes', 'executed', 'executing', 'execution', 'executions', 'executable', 'execut',
+  'calculate', 'calculates', 'calculated', 'calculating', 'calculation', 'calculations', 'calculator', 'calculators', 'calcul',
+  'apply', 'applies', 'applied', 'applying', 'application', 'applications', 'applicable',
+  
+  # 설명/구조 관련
+  'relate', 'relates', 'related', 'relating', 'relation', 'relations', 'relative', 'relatively', 'relat',
+  'base', 'bases', 'based', 'basing', 'basis',
+  'present', 'presents', 'presented', 'presenting', 'presentation', 'presentations', 'presently',
+  'disclose', 'discloses', 'disclosed', 'disclosing', 'disclosure', 'disclosures', 'disclos',
+  'step', 'steps', 'stepped', 'stepping',
+  'mean', 'means', 'meaning', 'meanings',
+  'draw', 'draws', 'drew', 'drawn', 'drawing', 'drawings',
+  'figure', 'figures', 'figured', 'figuring', 'figur',
+  'part', 'parts', 'parted', 'parting', 'partly',
+  'piece', 'pieces', 'pieced', 'piecing', 'piec',
+  'field', 'fields',
+  'technique', 'techniques', 'technical', 'technically', 'technic',
+  'background', 'backgrounds',
+  'result', 'results', 'resulted', 'resulting',
+  'require', 'requires', 'required', 'requiring', 'requirement', 'requirements', 'requir',
+  'prefer', 'prefers', 'preferred', 'preferring', 'preference', 'preferences', 'preferably',
+  'medium', 'mediums', 'media',
+  
+  # 필수 특허 껍데기 단어들
+  'invention', 'thereof', 'therefore', 'therefrom', 'system', 'systems', 'method', 'methods', 'apparatus', 'plurality', 'embodiment', 'embodiments'
+)
+
+csw_final <- c(stwds, custom_ultimate)
+
+# [2] 완벽해진 사전을 적용하여 텍스트 전처리 다시 수행 (기존 proc2 덮어쓰기)
+proc2 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw_final, 
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+# [3] 1% 희귀 단어 제거 (214건 기준, 기존 out2 덮어쓰기)
+out2 <- prepDocuments(proc2$documents, 
+                      proc2$vocab, 
+                      proc2$meta, 
+                      lower.thresh = 214)
+
+# 🔥 드디어 진짜 알맹이만 남은 단어 개수 확인! 콘솔 창을 봐주세요.
+print(paste("최종 살아남은 단어 개수:", length(out2$vocab)))
+
+# [4] 정말 깨끗해진 out2 데이터로 최종 K=50 모델 덮어쓰기! (시간 소요)
+set.seed(2026) 
+final_stm_50 <- stm(documents = out2$documents, 
+                    vocab = out2$vocab, 
+                    K = 50, 
+                    prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                    data = out2$meta,
+                    max.em.its = 150, 
+                    init.type = "Spectral")
+
+# [5] 찐 최종 단어 추출 및 엑셀(CSV) 덮어쓰기
+final_topic_words <- labelTopics(final_stm_50, n = 15)
+final_words_df <- as.data.frame(final_topic_words$prob)
+write.csv(final_words_df, "FINAL_K50_Ultimate_Clean_Topics.csv", row.names = TRUE)
+# 이미 만들어진 final_stm_50 모델에서 FREX 기준 상위 15개 단어만 쏙 뽑아냅니다.
+frex_words <- labelTopics(final_stm_50, n = 15)$frex
+
+# 결과를 보기 좋게 엑셀(CSV)로 저장합니다.
+write.csv(frex_words, "FINAL_K50_FREX_Words.csv", row.names = TRUE)
+
+[ 커스텀 불용어 추가 다시 3차 seachk ] 
+# 🧹 0. "10"에 이어 "100", "200"까지 완벽하게 불용어 사전에 추가!
+# ==========================================
+# 10, 100, 200 (그리고 복수형 s 붙은 것까지) 싹 다 추가합니다.
+csw_final_new <- c(csw_final, "10", "10s", "100", "100s", "200", "200s")
+
+# 이후 아래 코드는 아까와 동일하게 쭈욱 실행하시면 됩니다!
+proc3 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw_final_new, # 새로운 사전 적용
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+out3 <- prepDocuments(proc3$documents, proc3$vocab, proc3$meta, lower.thresh = 214)
+
+# 1. 최종 전처리된 데이터(out3)에서 단어 목록만 뽑아 표로 만들기
+vocab_df <- data.frame(Word = out3$vocab)
+
+# 2. 눈으로 확인하기 쉽게 알파벳 순서대로 정렬
+vocab_df <- vocab_df[order(vocab_df$Word), , drop = FALSE]
+
+# 3. 엑셀(CSV) 파일로 저장
+write.csv(vocab_df, "최종전처리_확인용_최종단어사전.csv", row.names = FALSE)
+
+print("✅ [저장 완료] '최종전처리_확인용_최종단어사전.csv' 파일이 생성되었습니다!")
+# ==========================================
+
+[ 조정된 피인용수 계산 ] 
+# ==========================================
+# 📊 1단계: 조정된 피인용수(C_adj_i) 계산하기
+# ==========================================
+# (1) 분모 계산: 특허가 출원된 연도(Publication.Year)별 '평균 피인용수(C_avg_j)'를 구합니다.
+out3$meta$C_avg_j <- ave(out3$meta$Cited.by.Patent.Count, 
+                         out3$meta$Publication.Year, 
+                         FUN = function(x) mean(x, na.rm = TRUE))
+
+# (2) 수식 적용: 개별 특허의 피인용수를 해당 연도 평균으로 나눕니다. 
+# (만약 특정 연도에 피인용수가 모두 0이라서 평균이 0이 될 경우, 수학적 에러(분모가 0)를 방지하기 위해 0으로 처리합니다.)
+out3$meta$C_adj_i <- ifelse(out3$meta$C_avg_j == 0, 
+                            0, 
+                            out3$meta$Cited.by.Patent.Count / out3$meta$C_avg_j)
+
+# (3) 눈으로 팩트 체크: 계산이 잘 되었는지 상위 10개 특허만 뽑아서 확인해 봅니다.
+print("--- 팩트 체크: 연도별 평균 및 조정된 피인용수 계산 결과 ---")
+print(head(out3$meta[, c("Publication.Year", "Cited.by.Patent.Count", "C_avg_j", "C_adj_i")], 10))
+
+[ 10~80 탐색 10단위로 ] 
+# ==========================================
+# 🚀 2단계: 넓은 범위(10~80) 탐색 및 결과 저장 (조정된 피인용수 적용)
+# ==========================================
+# (작업 폴더는 이미 'k찾기'로 설정되어 있다고 가정합니다)
+
+set.seed(2026) 
+# 💡 핵심: prevalence 공식에 log1p(...) 대신 C_adj_i 가 들어갑니다!
+kresult_broad_adj <- searchK(documents = out3$documents, 
+                             vocab = out3$vocab, 
+                             K = seq(10, 80, by = 10), 
+                             prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, 
+                             data = out3$meta, 
+                             max.em.its = 75, 
+                             init.type = "Spectral")
+
+# [결과 저장용 데이터 정리]
+K_broad <- unlist(kresult_broad_adj$results$K)
+z_semcoh_broad <- as.numeric(scale(unlist(kresult_broad_adj$results$semcoh)))
+z_exclus_broad <- as.numeric(scale(unlist(kresult_broad_adj$results$exclus)))
+score_broad <- (z_semcoh_broad + z_exclus_broad) / 2
+
+df_broad_adj <- data.frame(K = K_broad, 
+                           Coherence_Z = round(z_semcoh_broad, 3), 
+                           Exclusivity_Z = round(z_exclus_broad, 3), 
+                           Final_Score = round(score_broad, 3))
+
+# 1등 점수부터 순서대로 정렬
+df_broad_adj_sorted <- df_broad_adj[order(-df_broad_adj$Final_Score), ]
+
+# [CSV 표 저장]
+write.csv(df_broad_adj_sorted, "Zscore_Table_1_Broad(10_80)_Adj.csv", row.names = FALSE)
+print("✅ [표 저장 완료] Zscore_Table_1_Broad(10_80)_Adj.csv 파일 생성!")
+
+# [꺾은선 그래프(PNG) 저장]
+png(filename = "Zscore_Plot_1_Broad(10_80)_Adj.png", width = 1200, height = 800, res = 150)
+plot(df_broad_adj$K, df_broad_adj$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K Broad Search (Adj. Citation): Coherence & Exclusivity")
+dev.off()
+print("🖼️ [그래프 저장 완료] Zscore_Plot_1_Broad(10_80)_Adj.png 파일 생성!")
+
+[ 5~35 5단위로 ] 
+# ==========================================
+# 🚀 3단계: 중간 범위(5~35) 정밀 탐색 및 결과 저장 (조정된 피인용수 적용)
+# ==========================================
+
+set.seed(2026) 
+# 💡 핵심: K 범위를 5부터 35까지 5단위로 변경했습니다.
+kresult_narrow_adj <- searchK(documents = out3$documents, 
+                              vocab = out3$vocab, 
+                              K = seq(5, 35, by = 5), 
+                              prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, 
+                              data = out3$meta, 
+                              max.em.its = 75, 
+                              init.type = "Spectral")
+
+# [결과 저장용 데이터 정리]
+K_narrow <- unlist(kresult_narrow_adj$results$K)
+z_semcoh_narrow <- as.numeric(scale(unlist(kresult_narrow_adj$results$semcoh)))
+z_exclus_narrow <- as.numeric(scale(unlist(kresult_narrow_adj$results$exclus)))
+score_narrow <- (z_semcoh_narrow + z_exclus_narrow) / 2
+
+df_narrow_adj <- data.frame(K = K_narrow, 
+                            Coherence_Z = round(z_semcoh_narrow, 3), 
+                            Exclusivity_Z = round(z_exclus_narrow, 3), 
+                            Final_Score = round(score_narrow, 3))
+
+# 1등 점수부터 순서대로 정렬
+df_narrow_adj_sorted <- df_narrow_adj[order(-df_narrow_adj$Final_Score), ]
+
+# [CSV 표 저장]
+write.csv(df_narrow_adj_sorted, "Zscore_Table_2_Narrow(5_35)_Adj.csv", row.names = FALSE)
+print("✅ [표 저장 완료] Zscore_Table_2_Narrow(5_35)_Adj.csv 파일 생성!")
+
+# [꺾은선 그래프(PNG) 저장]
+png(filename = "Zscore_Plot_2_Narrow(5_35)_Adj.png", width = 1200, height = 800, res = 150)
+plot(df_narrow_adj$K, df_narrow_adj$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K Narrow Search (Adj. Citation): Coherence & Exclusivity")
+dev.off()
+print("🖼️ [그래프 저장 완료] Zscore_Plot_2_Narrow(5_35)_Adj.png 파일 생성!")
+
+[ 15~25 1단위로 ] 
+# ==========================================
+# 🚀 4단계: 초정밀 범위(15~25) 탐색 및 결과 저장 (조정된 피인용수 적용)
+# ==========================================
+# (작업 폴더는 이미 'k찾기'로 설정되어 있다고 가정합니다)
+
+set.seed(2026) 
+# 💡 K를 15부터 25까지 1단위(15, 16, 17 ... 25)로 탐색합니다!
+kresult_micro_adj <- searchK(documents = out3$documents, 
+                             vocab = out3$vocab, 
+                             K = 15:25, 
+                             prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, 
+                             data = out3$meta, 
+                             max.em.its = 75, 
+                             init.type = "Spectral")
+
+# [결과 저장용 데이터 정리]
+K_micro <- unlist(kresult_micro_adj$results$K)
+z_semcoh_micro <- as.numeric(scale(unlist(kresult_micro_adj$results$semcoh)))
+z_exclus_micro <- as.numeric(scale(unlist(kresult_micro_adj$results$exclus)))
+score_micro <- (z_semcoh_micro + z_exclus_micro) / 2
+
+# 원본 데이터 (그래프용: K가 15, 16, 17... 순서대로 배열됨)
+df_micro_adj <- data.frame(K = K_micro, 
+                           Coherence_Z = round(z_semcoh_micro, 3), 
+                           Exclusivity_Z = round(z_exclus_micro, 3), 
+                           Final_Score = round(score_micro, 3))
+
+# 표 저장용 (1등 점수부터 순서대로 정렬됨)
+df_micro_adj_sorted <- df_micro_adj[order(-df_micro_adj$Final_Score), ]
+
+# [CSV 표 저장]
+write.csv(df_micro_adj_sorted, "Zscore_Table_3_Micro(15_25)_Adj.csv", row.names = FALSE)
+print("✅ [표 저장 완료] Zscore_Table_3_Micro(15_25)_Adj.csv 파일 생성!")
+
+# [꺾은선 그래프(PNG) 저장] 
+# 원본 데이터(df_micro_adj)를 사용하므로 15부터 25까지 선이 예쁘게 순서대로 이어집니다.
+png(filename = "Zscore_Plot_3_Micro(15_25)_Adj.png", width = 1200, height = 800, res = 150)
+plot(df_micro_adj$K, df_micro_adj$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K Micro Search (Adj. Citation): Coherence & Exclusivity")
+dev.off()
+print("🖼️ [그래프 저장 완료] Zscore_Plot_3_Micro(15_25)_Adj.png 파일 생성!")
+
+[ k 20 확정 이후 STM & 시각화 ] 
+# ==========================================
+# 🏆 대망의 최종 모델 K=20 정식 학습 시작 (조정된 피인용수 적용)
+# ==========================================
+# (작업 폴더는 'k찾기'로 설정되어 있다고 가정합니다)
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# [1] 시드 고정 및 모델 학습 (완벽한 수렴을 위해 반복 횟수 150회 부여)
+set.seed(2026) 
+final_stm_20_adj <- stm(documents = out3$documents, 
+                        vocab = out3$vocab, 
+                        K = 20, 
+                        prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, # 💡 조정 피인용수 탑재!
+                        data = out3$meta,
+                        max.em.its = 150,        # 💡 최종 모델용 최대 반복 횟수
+                        init.type = "Spectral")
+
+# [2] FREX 지표를 기준으로 각 토픽의 핵심 시그니처 단어 추출 (상위 15개)
+topic_labels_20_adj <- labelTopics(final_stm_20_adj, n = 15)
+frex_words_20_adj <- topic_labels_20_adj$frex
+
+# [3] FREX 단어 결과를 엑셀(CSV) 파일로 예쁘게 저장
+write.csv(frex_words_20_adj, "FINAL_K20_FREX_Words_Adj.csv", row.names = TRUE)
+print("🎉 [성공] K=20 최종 FREX 단어 엑셀 저장 완료!")
+
+# [4] (매우 중요) 완성된 최종 모델만 따로 안전하게 영구 보존!
+save(final_stm_20_adj, file = "fintech_final_model_K20_Adj.RData")
+print("💾 [성공] K=20 최종 모델(조정 피인용수 적용) 백업 완료! (시각화 준비 끝)")

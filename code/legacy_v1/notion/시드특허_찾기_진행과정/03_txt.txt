@@ -1,0 +1,140 @@
+class_cpc.symbol:(
+"G06Q20" OR
+"G06Q20/00" OR
+"G06Q20/06" OR
+"G06Q20/10" OR
+"G06Q20/32" OR
+"G06Q20/40" OR
+"G07F" OR
+"G06K19" OR
+"H04W" OR
+"H04L9"
+)
+AND
+(
+  title:(
+    "Digital Payment" OR "Mobile Payment"
+    OR ("Online payment" AND OTP)
+    OR "Digital Payment Solution" OR "Mobile Payment Solution"
+    OR "Payment and Settlement" OR "Payment and Settlement Service"
+    OR ("Payment processing" AND "Data security")
+    OR "Payment gateway" OR "Payment service provider"
+    OR (Payment AND AI)
+    OR (Payment AND API)
+    OR (Payment AND Authentication)
+    OR (Payment AND Biometrics)
+    OR (Payment AND "Cloud Computing")
+    OR (Payment AND Encryption)
+    OR (Payment AND OTP)
+    OR (Payment AND NFC)
+    OR (Payment AND Blockchain)
+    OR (Payment AND "Distributed ledger")
+    OR (Payment AND "Deep learning")
+    OR ("Mobile payment" AND NFC)
+    OR (Mobile AND "Account transfer")
+    OR "Digital Wallet" OR "E-wallet" OR "Electronic wallet"
+    OR ("Digital wallet" AND Biometrics)
+    OR (Wallet AND API)
+    OR (Wallet AND Authentication)
+    OR (Wallet AND Biometrics)
+    OR (Wallet AND Encryption)
+    OR (Wallet AND OTP)
+    OR (Wallet AND NFC)
+    OR (Wallet AND Blockchain)
+    OR (Wallet AND Cryptocurrency)
+    OR "Money transfer" OR Remittance
+    OR ("Money transfer" AND API)
+    OR ("Money transfer" AND Authentication)
+    OR ("Money transfer" AND Verification)
+    OR ("Money transfer" AND Blockchain)
+    OR ("Money transfer" AND Cryptocurrency)
+    OR ("Money transfer" AND Encryption)
+    OR ("Money transfer" AND Mobile)
+    OR (Remittance AND API)
+    OR (Remittance AND Authentication)
+    OR (Remittance AND Encryption)
+    OR (Remittance AND Blockchain)
+    OR (Remittance AND "Distributed ledger")
+    OR ("Cross-border remittance" AND Blockchain)
+    OR "Account transfer"
+    OR ("Account transfer" AND API)
+    OR ("Account transfer" AND Authentication)
+    OR ("Account transfer" AND Encryption)
+    OR ("Account transfer" AND OTP)
+    OR ("Account transfer" AND Verification)
+    OR "Real-time payment" OR "Instant payment" OR "Person-to-person payment"
+    OR ("Smart card" AND NFC)
+    OR ("Wire transfer" AND "Smart card")
+    OR ("Payment card" AND RFID)
+    OR ("Securities settlement" AND "Distributed ledger")
+    OR (Encryption AND "Money transfer")
+    OR ("Digital currency wallet" AND "Security token")
+    OR (Cryptocurrency AND Wallet)
+    OR ("Cloud Computing" AND "Settlement system")
+    OR (Authentication AND "Mobile payment")
+    OR (Digital AND "Electronic wallet")
+  )
+  OR
+  abstract:(
+    "Digital Payment" OR "Mobile Payment"
+    OR ("Online payment" AND OTP)
+    OR "Digital Payment Solution" OR "Mobile Payment Solution"
+    OR "Payment and Settlement" OR "Payment and Settlement Service"
+    OR ("Payment processing" AND "Data security")
+    OR "Payment gateway" OR "Payment service provider"
+    OR (Payment AND AI)
+    OR (Payment AND API)
+    OR (Payment AND Authentication)
+    OR (Payment AND Biometrics)
+    OR (Payment AND "Cloud Computing")
+    OR (Payment AND Encryption)
+    OR (Payment AND OTP)
+    OR (Payment AND NFC)
+    OR (Payment AND Blockchain)
+    OR (Payment AND "Distributed ledger")
+    OR (Payment AND "Deep learning")
+    OR ("Mobile payment" AND NFC)
+    OR (Mobile AND "Account transfer")
+    OR "Digital Wallet" OR "E-wallet" OR "Electronic wallet"
+    OR ("Digital wallet" AND Biometrics)
+    OR (Wallet AND API)
+    OR (Wallet AND Authentication)
+    OR (Wallet AND Biometrics)
+    OR (Wallet AND Encryption)
+    OR (Wallet AND OTP)
+    OR (Wallet AND NFC)
+    OR (Wallet AND Blockchain)
+    OR (Wallet AND Cryptocurrency)
+    OR "Money transfer" OR Remittance
+    OR ("Money transfer" AND API)
+    OR ("Money transfer" AND Authentication)
+    OR ("Money transfer" AND Verification)
+    OR ("Money transfer" AND Blockchain)
+    OR ("Money transfer" AND Cryptocurrency)
+    OR ("Money transfer" AND Encryption)
+    OR ("Money transfer" AND Mobile)
+    OR (Remittance AND API)
+    OR (Remittance AND Authentication)
+    OR (Remittance AND Encryption)
+    OR (Remittance AND Blockchain)
+    OR (Remittance AND "Distributed ledger")
+    OR ("Cross-border remittance" AND Blockchain)
+    OR "Account transfer"
+    OR ("Account transfer" AND API)
+    OR ("Account transfer" AND Authentication)
+    OR ("Account transfer" AND Encryption)
+    OR ("Account transfer" AND OTP)
+    OR ("Account transfer" AND Verification)
+    OR "Real-time payment" OR "Instant payment" OR "Person-to-person payment"
+    OR ("Smart card" AND NFC)
+    OR ("Wire transfer" AND "Smart card")
+    OR ("Payment card" AND RFID)
+    OR ("Securities settlement" AND "Distributed ledger")
+    OR (Encryption AND "Money transfer")
+    OR ("Digital currency wallet" AND "Security token")
+    OR (Cryptocurrency AND Wallet)
+    OR ("Cloud Computing" AND "Settlement system")
+    OR (Authentication AND "Mobile payment")
+    OR (Digital AND "Electronic wallet")
+  )
+)

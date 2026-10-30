@@ -1,0 +1,85 @@
+
+(
+class_cpc.symbol:("G06Q40/02")
+
+)
+AND
+(
+  title:(
+    "Neo-bank" OR Neobank OR Neobanks
+    OR "Digital Bank" OR "Digital Banking" OR "Mobile Banking"
+    OR "Online Banking"
+    OR ("Online banking" AND Authentication)
+    OR ("Online banking" AND Encryption)
+    OR "Open Banking" OR "Open Bank" OR "Open API banking" OR "Open finance"
+    OR "Financial API" OR "Banking API"
+    OR (API AND "Open Banking")
+    OR ("Core banking" AND "Cloud computing")
+    OR ("Cloud Computing" AND "Investing platform")
+    OR ("Cloud Computing" AND "Cash management")
+    OR ("Consumer banking" AND AI)
+    OR ("Consumer banking" AND Authentication)
+    OR ("Consumer banking" AND Biometrics)
+    OR ("Consumer banking" AND Chatbot)
+    OR ("Consumer banking" AND Mobile)
+    OR ("Consumer banking" AND "Cloud Computing")
+    OR ("Cash management" AND API)
+    OR ("Cash management" AND "Cloud computing")
+    OR ("Currency exchange" AND API)
+    OR (API AND "Currency exchange")
+    OR ("Financial risk management" AND AI)
+    OR ("Foreign exchange risk" AND AI)
+    OR ("ETF investing" AND AI)
+    OR (Encryption AND "Digital banking")
+    OR Underbanked
+    OR ("Billing & invoicing" AND "Cloud computing")
+    OR ("Big Data Analysis" AND "Consumer banking")
+    OR ("Big Data Analysis" AND Investing)
+    OR Blockchain
+    OR (Blockchain AND "Smart contract")
+    OR ("Natural language processing" AND Chatbot AND Banking)
+    OR ("Mobile banking" AND Biometrics)
+    OR ("Insurance claim" AND Blockchain)
+    OR ("Micro-insurance" AND Blockchain)
+    OR (Blockchain AND "Insurance claim")
+  )
+  OR
+  abstract:(
+    "Neo-bank" OR Neobank OR Neobanks
+    OR "Digital Bank" OR "Digital Banking" OR "Mobile Banking"
+    OR "Online Banking"
+    OR ("Online banking" AND Authentication)
+    OR ("Online banking" AND Encryption)
+    OR "Open Banking" OR "Open Bank" OR "Open API banking" OR "Open finance"
+    OR "Financial API" OR "Banking API"
+    OR (API AND "Open Banking")
+    OR ("Core banking" AND "Cloud computing")
+    OR ("Cloud Computing" AND "Investing platform")
+    OR ("Cloud Computing" AND "Cash management")
+    OR ("Consumer banking" AND AI)
+    OR ("Consumer banking" AND Authentication)
+    OR ("Consumer banking" AND Biometrics)
+    OR ("Consumer banking" AND Chatbot)
+    OR ("Consumer banking" AND Mobile)
+    OR ("Consumer banking" AND "Cloud Computing")
+    OR ("Cash management" AND API)
+    OR ("Cash management" AND "Cloud computing")
+    OR ("Currency exchange" AND API)
+    OR (API AND "Currency exchange")
+    OR ("Financial risk management" AND AI)
+    OR ("Foreign exchange risk" AND AI)
+    OR ("ETF investing" AND AI)
+    OR (Encryption AND "Digital banking")
+    OR Underbanked
+    OR ("Billing & invoicing" AND "Cloud computing")
+    OR ("Big Data Analysis" AND "Consumer banking")
+    OR ("Big Data Analysis" AND Investing)
+    OR Blockchain
+    OR (Blockchain AND "Smart contract")
+    OR ("Natural language processing" AND Chatbot AND Banking)
+    OR ("Mobile banking" AND Biometrics)
+    OR ("Insurance claim" AND Blockchain)
+    OR ("Micro-insurance" AND Blockchain)
+    OR (Blockchain AND "Insurance claim")
+  )
+)

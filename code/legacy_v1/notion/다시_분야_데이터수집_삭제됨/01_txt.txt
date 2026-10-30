@@ -1,0 +1,18 @@
+(
+  portfolio
+  OR securities
+  OR fund
+  OR ETF
+  OR bond
+  OR brokerage
+  OR "order execution"
+  OR trading
+  OR issuance
+  OR offering
+  OR IPO
+  OR "private equity"
+  OR (
+      (bitcoin OR cryptocurrency OR "digital asset" OR NFT)
+      AND (trading OR exchange OR portfolio OR investment)
+     )
+)

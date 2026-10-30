@@ -1,0 +1,102 @@
+# =====================================================================
+# [4.3.2] 유의도 농도(Intensity) 반영 전략적 갭 히트맵 (최종 완성판)
+# =====================================================================
+library(tidyverse)
+
+# 1. 추출해둔 데이터 불러오기
+df <- read.csv("STM_US_Baseline_Advantage.csv", fileEncoding = "CP949", stringsAsFactors = FALSE)
+
+# 2. 데이터 전처리 (방향 및 유의수준에 따른 7단계 세밀한 범주화)
+df_heat <- df %>%
+  mutate(
+    Fill_Category = case_when(
+      p_value < 0.001 & Estimate > 0 ~ "Target (+) : p < 0.001 (***)",
+      p_value < 0.01  & Estimate > 0 ~ "Target (+) : p < 0.01 (**)",
+      p_value < 0.05  & Estimate > 0 ~ "Target (+) : p < 0.05 (*)",
+      p_value < 0.001 & Estimate < 0 ~ "US (-) : p < 0.001 (***)",
+      p_value < 0.01  & Estimate < 0 ~ "US (-) : p < 0.01 (**)",
+      p_value < 0.05  & Estimate < 0 ~ "US (-) : p < 0.05 (*)",
+      TRUE ~ "Not Significant"
+    )
+  )
+
+# 범례(Legend)에 표시될 순서를 강제로 지정 (타국 압승 -> 무승부 -> 미국 압승 순서)
+df_heat$Fill_Category <- factor(df_heat$Fill_Category, levels = c(
+  "Target (+) : p < 0.001 (***)",
+  "Target (+) : p < 0.01 (**)",
+  "Target (+) : p < 0.05 (*)",
+  "Not Significant",
+  "US (-) : p < 0.05 (*)",
+  "US (-) : p < 0.01 (**)",
+  "US (-) : p < 0.001 (***)"
+))
+
+# 3. Y축(토픽 및 클러스터) 정렬을 위한 팩터화
+cluster_order <- c('A. 기업 재무 및 회계 관리', 'B. 맞춤형 보험 및 타겟 식별',
+                   'C. AI 기반 신용/투자 분석', 'D. 블록체인 기반 에너지 금융',
+                   'E. 블록체인 및 디지털 자산', 'F. 보안 인증 및 규제 컴플라이언스',
+                   'G. 뱅킹 및 대금 정산', 'H. O2O 상거래 및 간편 결제')
+df_heat$Cluster <- factor(df_heat$Cluster, levels = cluster_order)
+
+# T_Num에서 숫자만 추출하여 역순 정렬 (에러 해결된 완벽한 로직)
+topic_levels <- df_heat %>%
+  mutate(Topic_Int = as.numeric(gsub("T", "", T_Num))) %>% 
+  arrange(desc(Cluster), desc(Topic_Int)) %>%              
+  pull(T_Num) %>%
+  unique()
+df_heat$T_Num <- factor(df_heat$T_Num, levels = topic_levels)
+
+# X축 국가 순서 고정
+df_heat$Country <- factor(df_heat$Country, levels = c("KR", "CN", "JP", "EP"))
+
+# 4. 🔥 7단계 파스텔 톤 농도 팔레트 정의
+pastel_shades <- c(
+  "Target (+) : p < 0.001 (***)" = "#5DADE2", # 짙은 파스텔 블루 (확실한 타국 우위)
+  "Target (+) : p < 0.01 (**)"   = "#85C1E9", # 중간 파스텔 블루
+  "Target (+) : p < 0.05 (*)"    = "#D4E6F1", # 연한 파스텔 블루 (미약한 타국 우위)
+  "Not Significant"              = "#F8F9F9", # 옅은 회색 (무승부)
+  "US (-) : p < 0.05 (*)"        = "#FADBD8", # 연한 파스텔 레드 (미약한 미국 우위)
+  "US (-) : p < 0.01 (**)"       = "#F5B7B1", # 중간 파스텔 레드
+  "US (-) : p < 0.001 (***)"     = "#EC7063"  # 짙은 파스텔 레드 (확실한 미국 독식)
+)
+
+# 5. 농도 기반의 히트맵 시각화
+p_heatmap_final <- ggplot(df_heat, aes(x = Country, y = T_Num)) +
+  geom_tile(aes(fill = Fill_Category), color = "white", linewidth = 1) +
+  geom_text(aes(label = Significance), color = "gray30", size = 5.5, vjust = 0.75) +
+  facet_grid(Cluster ~ ., scales = "free_y", space = "free_y") +
+  
+  # 수동 팔레트 적용 및 범례를 2줄로 깔끔하게 정렬
+  scale_fill_manual(values = pastel_shades, drop = FALSE, guide = guide_legend(nrow = 2)) +
+  
+  # 디자인 및 테마 설정
+  theme_minimal(base_size = 13) +
+  labs(
+    title = "Strategic Gap Heatmap: Global Competitors vs. US Baseline",
+    subtitle = "Color intensity reflects statistical significance level (* to ***)",
+    x = "Comparison Countries (vs. US)",
+    y = "Topics (Grouped by Clusters)",
+    fill = "Dominance & Significance"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 12, color = "gray50", hjust = 0.5, margin = margin(b=15)),
+    
+    # 클러스터 이름 라벨 삭제 및 블록 밀착
+    strip.text.y = element_blank(),
+    strip.background = element_blank(),
+    panel.spacing = unit(0.1, "lines"), 
+    
+    axis.text.x = element_text(face = "bold", size = 14, color = "black"),
+    axis.text.y = element_text(face = "bold", size = 11, color = "gray30"),
+    
+    panel.grid = element_blank(), 
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold", margin = margin(r=15)),
+    legend.text = element_text(size = 10)
+  )
+
+# 6. 화면 출력 및 저장
+print(p_heatmap_final)
+ggsave("STM_Strategic_Gap_Heatmap_Final_Intensity.png", plot = p_heatmap_final, width = 13, height = 10, dpi = 300)
+print("✅ [성공] 농도(Intensity)가 반영된 궁극의 히트맵이 'STM_Strategic_Gap_Heatmap_Final_Intensity.png'로 저장되었습니다!")

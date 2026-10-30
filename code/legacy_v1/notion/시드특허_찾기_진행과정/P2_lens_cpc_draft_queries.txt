@@ -1,0 +1,64 @@
+3,4,6버 항목 CPC 코드 수정
+
+
+
+
+class_cpc:(
+"G06Q20" OR
+"G06Q20/00" OR
+"G06Q20/06" OR
+"G06Q20/10" OR
+"G06Q20/32" OR
+"G06Q20/40" OR
+"G07F" OR
+"G06K19" OR
+"H04W" OR
+"H04L9"
+)
+
+
+
+
+
+(
+class_cpc.symbol:("G06Q40/00" OR "G06Q40/02")
+)
+OR
+(
+class_cpc.symbol:("G06Q40/00" OR "G06Q40/02")
+AND
+class_cpc.symbol:(
+"H04L67/00" OR
+"H04L63/00" OR
+"H04W12/00" OR
+"G06F16/00" OR
+"G06F9/00"  OR
+"G06F21/00" OR
+"G06N3/00"  OR
+"G06N5/00"  OR
+"G06N7/00"  OR
+"G06N20/00" OR
+"G06F18/00" OR
+"G06F40/00"
+)
+)
+
+
+
+
+
+(
+class_cpc.symbol:("G06Q40/00" OR "G06Q40/02" OR "G06Q20/40")
+)
+AND
+(
+class_cpc.symbol:(
+"G06F21/00" OR
+"H04L9/00"  OR
+"H04L63/00" OR
+"G06K19/00" OR
+"G06N20/00" OR
+"G06F18/00" OR
+"G06F40/00"
+)
+)

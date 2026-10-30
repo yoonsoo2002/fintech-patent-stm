@@ -1,0 +1,75 @@
+class_cpc.symbol:"G06Q40/03"
+AND
+(
+  title:(
+    P2P OR "peer to peer" OR "peer-to-peer"
+    OR "P2P Lending" OR "Peer-to-Peer Lending" OR "P2P lending"
+    OR "Digital lending"
+    OR ("P2P lending" AND "Machine learning")
+    OR (Mobile AND "Digital lending")
+    OR (Lending AND AI)
+    OR (Lending AND "Machine Learning")
+    OR Crowdfunding
+    OR "Credit model" OR "Credit scoring" OR "Credit risk"
+    OR ("Credit scoring" AND AI)
+    OR ("Credit scoring" AND "Big Data Analysis")
+    OR ("Credit scoring" AND "Machine Learning")
+    OR ("Credit model" AND "Machine Learning")
+    OR ("Machine Learning" AND "Credit model")
+    OR ("Credit risk" AND "Machine learning")
+    OR ("Credit risk" AND "Predictive analytics")
+    OR ("Credit limit" AND "Machine learning")
+    OR ("Credit card" AND "Big data analysis")
+    OR ("Credit card" AND "Predictive analytics")
+    OR "Consumer banking"
+    OR "Credit card"
+    OR (API AND "Credit card management")
+    OR (AI AND "Credit scoring")
+    OR ("Big Data Analysis" AND "Credit scoring")
+    OR (Loan AND AI)
+    OR ("Machine Learning" AND "Loan default prediction")
+    OR ("Loan origination" AND "Cloud computing")
+    OR ("Loan underwriting" AND "Big data analysis")
+    OR ("Syndicated loan" AND "Distributed ledger")
+    OR (Tokenization AND "Data security" AND "Credit card")
+    OR ("Blockchain-based" AND "Carbon Credit Trading")
+    OR "loan platform" OR "lending platform" OR "loan management"
+    OR "loan servicing" OR "loan processing" OR "loan approval"
+  )
+  OR
+  abstract:(
+    P2P OR "peer to peer" OR "peer-to-peer"
+    OR "P2P Lending" OR "Peer-to-Peer Lending" OR "P2P lending"
+    OR "Digital lending"
+    OR ("P2P lending" AND "Machine learning")
+    OR (Mobile AND "Digital lending")
+    OR (Lending AND AI)
+    OR (Lending AND "Machine Learning")
+    OR Crowdfunding
+    OR "Credit model" OR "Credit scoring" OR "Credit risk"
+    OR ("Credit scoring" AND AI)
+    OR ("Credit scoring" AND "Big Data Analysis")
+    OR ("Credit scoring" AND "Machine Learning")
+    OR ("Credit model" AND "Machine Learning")
+    OR ("Machine Learning" AND "Credit model")
+    OR ("Credit risk" AND "Machine learning")
+    OR ("Credit risk" AND "Predictive analytics")
+    OR ("Credit limit" AND "Machine learning")
+    OR ("Credit card" AND "Big data analysis")
+    OR ("Credit card" AND "Predictive analytics")
+    OR "Consumer banking"
+    OR "Credit card"
+    OR (API AND "Credit card management")
+    OR (AI AND "Credit scoring")
+    OR ("Big Data Analysis" AND "Credit scoring")
+    OR (Loan AND AI)
+    OR ("Machine Learning" AND "Loan default prediction")
+    OR ("Loan origination" AND "Cloud computing")
+    OR ("Loan underwriting" AND "Big data analysis")
+    OR ("Syndicated loan" AND "Distributed ledger")
+    OR (Tokenization AND "Data security" AND "Credit card")
+    OR ("Blockchain-based" AND "Carbon Credit Trading")
+    OR "loan platform" OR "lending platform" OR "loan management"
+    OR "loan servicing" OR "loan processing" OR "loan approval"
+  )
+)

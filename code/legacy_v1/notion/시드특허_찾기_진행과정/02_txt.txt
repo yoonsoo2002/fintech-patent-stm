@@ -1,0 +1,39 @@
+class_cpc.symbol:("G06Q40/04" OR "G06Q40/06")
+AND
+(
+  title:(
+    "Robo-advisor" OR "Robo-advisory" OR "Robo-advisory service"
+    OR PFM OR "Personal Financial Management"
+    OR "Wealth management platform" OR "Customized Wealth Management Service"
+    OR "Investment platform"
+    OR ("Investment platform" AND Algorithm)
+    OR "ESG investment platform"
+    OR (Algorithm AND Trading)
+    OR (Trading AND Algorithm)
+    OR ("Trading (ETF)" AND Algorithm)
+    OR ("Trading patterns" AND "Deep learning")
+    OR ("Deep learning" AND "Stock market analysis")
+    OR "Currency exchange"
+    OR "Stock market"
+    OR "Digital Asset" OR "Digital asset" OR "Digital Currency"
+    OR ("Distributed ledger" AND "Asset tokenization")
+  )
+  OR
+  abstract:(
+    "Robo-advisor" OR "Robo-advisory" OR "Robo-advisory service"
+    OR PFM OR "Personal Financial Management"
+    OR "Wealth management platform" OR "Customized Wealth Management Service"
+    OR "Investment platform"
+    OR ("Investment platform" AND Algorithm)
+    OR "ESG investment platform"
+    OR (Algorithm AND Trading)
+    OR (Trading AND Algorithm)
+    OR ("Trading (ETF)" AND Algorithm)
+    OR ("Trading patterns" AND "Deep learning")
+    OR ("Deep learning" AND "Stock market analysis")
+    OR "Currency exchange"
+    OR "Stock market"
+    OR "Digital Asset" OR "Digital asset" OR "Digital Currency"
+    OR ("Distributed ledger" AND "Asset tokenization")
+  )
+)

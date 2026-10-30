@@ -1,0 +1,9 @@
+(
+  robo-advisor
+  OR robo-advisory
+  OR "digital advice"
+  OR "algorithmic trading"
+  OR "portfolio rebalancing"
+  OR STO
+  OR "digital securities"
+)

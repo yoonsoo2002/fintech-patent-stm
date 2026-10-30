@@ -1,0 +1,159 @@
+# =========================================================
+# 외생변수 활용(사후분석) : 20개 토픽 시계열 동향 분석
+# [수정 사항] 
+# 1) 선 그래프(Facet) 꺾은선 두께 대폭 축소 (얇게)
+# 2) PDF: 기본(작은) 글씨 크기로 단정하게 저장
+# 3) PNG: 글씨 크기를 아주 크게 설정하여 별도 저장
+# =========================================================
+
+# ---------------------------------------------------------
+# 0. 패키지 로드
+# ---------------------------------------------------------
+library(stm)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(stringr)
+
+# ---------------------------------------------------------
+# 1. 작업 폴더 설정 및 객체 확인
+# ---------------------------------------------------------
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+if (!exists("final_stm_20_adj")) stop("final_stm_20_adj 객체가 없습니다.")
+if (!exists("out3")) stop("out3 객체가 없습니다.")
+
+K <- ncol(final_stm_20_adj$theta)
+topic_ids <- paste0("T", 1:K)
+
+# ---------------------------------------------------------
+# 2. estimateEffect 적합 (원본 meta 유지)
+# ---------------------------------------------------------
+effect_time <- estimateEffect(
+  1:K ~ s(Publication.Year),
+  stmobj = final_stm_20_adj,
+  metadata = out3$meta,
+  uncertainty = "Global"
+)
+
+save(effect_time, file = "STM_estimateEffect_time.RData")
+
+# ---------------------------------------------------------
+# 3. 연도별 토픽 평균 비중 계산 - 2026년 제외 필터링
+# ---------------------------------------------------------
+theta_df <- as.data.frame(final_stm_20_adj$theta)
+colnames(theta_df) <- topic_ids
+theta_df$Publication.Year <- out3$meta$Publication.Year
+
+topic_year_mean <- theta_df %>%
+  pivot_longer(
+    cols = starts_with("T"),
+    names_to = "topic_id",
+    values_to = "topic_prop"
+  ) %>%
+  group_by(Publication.Year, topic_id) %>%
+  summarise(mean_prop = mean(topic_prop, na.rm = TRUE), .groups = "drop") %>%
+  filter(Publication.Year < 2026) %>% 
+  mutate(topic_id = factor(topic_id, levels = topic_ids))
+
+year_seq <- sort(unique(topic_year_mean$Publication.Year))
+
+write.csv(topic_year_mean, "Topic_Yearly_Mean_Values_Filtered.csv", row.names = FALSE)
+
+# ---------------------------------------------------------
+# 4. 전체 토픽 연도별 히트맵
+# ---------------------------------------------------------
+p_heatmap_base <- ggplot(topic_year_mean, aes(x = Publication.Year, y = topic_id, fill = mean_prop)) +
+  geom_tile(color = "white", linewidth = 0.3) +
+  scale_x_continuous(breaks = year_seq) +
+  scale_y_discrete(limits = rev) + # T1이 위로 가도록
+  scale_fill_gradient(low = "gray95", high = "darkblue", labels = percent_format(accuracy = 0.1)) +
+  labs(title = "Yearly Topic Proportion Heatmap", 
+       x = "Year", y = "Topic ID", fill = "Proportion")
+
+# [PDF] 글씨 작게 (base_size = 11)
+p_heatmap_pdf <- p_heatmap_base + theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("All_Topics_Heatmap.pdf", plot = p_heatmap_pdf, width = 10, height = 8)
+
+# [PNG] 글씨 엄청 크게 (base_size = 26)
+p_heatmap_png <- p_heatmap_base + theme_minimal(base_size = 26) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(face = "bold", size = 30),
+        legend.key.height = unit(1.5, "cm"))
+ggsave("All_Topics_Heatmap.png", plot = p_heatmap_png, width = 14, height = 10, dpi = 300)
+
+# ---------------------------------------------------------
+# 5. 전체 토픽 선그래프 Facet (꺾은선 얇게)
+# ---------------------------------------------------------
+# linewidth = 0.5 로 얇게 변경
+p_line_base <- ggplot(topic_year_mean, aes(x = Publication.Year, y = mean_prop)) +
+  geom_line(color = "navy", linewidth = 0.5) + 
+  geom_point(size = 1.2) +
+  facet_wrap(~ topic_id, ncol = 4) + # Y축 완전 동일하게 고정됨
+  scale_x_continuous(breaks = year_seq) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(title = "Temporal Trends of All Topics", 
+       x = "Year", y = "Mean Topic Proportion")
+
+# [PDF] 글씨 작게 (base_size = 11)
+p_line_pdf <- p_line_base + theme_bw(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 8),
+        strip.background = element_rect(fill = "gray90"))
+ggsave("All_Topics_Trends_Facet.pdf", plot = p_line_pdf, width = 15, height = 12)
+
+# [PNG] 글씨 엄청 크게 (base_size = 24)
+p_line_png <- p_line_base + theme_bw(base_size = 24) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 16),
+        axis.text.y = element_text(size = 16),
+        strip.text = element_text(size = 20, face = "bold"),
+        plot.title = element_text(face = "bold", size = 32),
+        strip.background = element_rect(fill = "gray90"))
+ggsave("All_Topics_Trends_Facet.png", plot = p_line_png, width = 18, height = 14, dpi = 300)
+
+# ---------------------------------------------------------
+# 6. 연도별 상위 5개 토픽 정리 (CSV)
+# ---------------------------------------------------------
+top5_table <- topic_year_mean %>%
+  group_by(Publication.Year) %>%
+  slice_max(order_by = mean_prop, n = 5) %>%
+  arrange(Publication.Year, desc(mean_prop))
+
+write.csv(top5_table, "Top5_Topics_Per_Year.csv", row.names = FALSE)
+
+# ---------------------------------------------------------
+# 7. 개별 토픽 95% CI 그래프 
+# ---------------------------------------------------------
+dir.create("Individual_Topic_Plots", showWarnings = FALSE)
+
+for (i in 1:K) {
+  fname <- paste0("Individual_Topic_Plots/Topic_", str_pad(i, 2, pad = "0"))
+  
+  # --- [PNG] 글씨 엄청 크게 (pointsize = 26) ---
+  png(paste0(fname, ".png"), width = 12, height = 8, units = "in", res = 300, pointsize = 26)
+  par(mar = c(5, 5, 4, 2) + 0.1)
+  plot(effect_time, "Publication.Year", method = "continuous", topics = i,
+       main = paste0("Topic ", i), xlab = "Year", ylab = "Expected Proportion",
+       xaxt = "n", ci.level = 0.95,
+       xlim = c(min(year_seq), max(year_seq)))
+  axis(1, at = year_seq, labels = year_seq)
+  dev.off()
+  
+  # --- [PDF] 글씨 작게 (pointsize = 11) ---
+  pdf(paste0(fname, ".pdf"), width = 8, height = 6, pointsize = 11)
+  par(mar = c(5, 4, 4, 2) + 0.1)
+  plot(effect_time, "Publication.Year", method = "continuous", topics = i,
+       main = paste0("Topic ", i), xlab = "Year", ylab = "Expected Proportion",
+       xaxt = "n", ci.level = 0.95,
+       xlim = c(min(year_seq), max(year_seq)))
+  axis(1, at = year_seq, labels = year_seq)
+  dev.off()
+}
+
+cat("\n====================================================\n")
+cat("✅ 시각화 완료!\n")
+cat("- 꺾은선 두께를 얇게 줄였습니다 (linewidth = 0.5).\n")
+cat("- PDF는 깔끔하게 작은 글씨로 저장되었습니다.\n")
+cat("- PNG는 텍스트를 대폭 키워 시원하게 보이도록 분리 저장했습니다.\n")
+cat("====================================================\n")

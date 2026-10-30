@@ -1,0 +1,36 @@
+
+class_cpc.symbol:("G06Q40/00" OR "G06Q40/02" OR "G06Q20/40")
+AND
+class_cpc.symbol:(
+  "G06F21/00" OR
+  "H04L9/00" OR
+  "H04L63/00" OR
+  "G06K19/00" OR
+  "G06N20/00" OR
+  "G06F18/00" OR
+  "G06F40/00"
+)
+AND
+(
+  title:(
+    RegTech OR compliance OR "regulatory compliance"
+    OR AML OR "anti money laundering" OR "money laundering"
+    OR KYC OR "know your customer" OR "customer identification"
+    OR "identity verification" OR "identity authentication"
+    OR "transaction monitoring" OR "suspicious transaction"
+    OR "fraud detection" OR fraud OR "financial fraud"
+    OR "sanction screening" OR "watchlist screening"
+    OR "risk scoring" OR "risk assessment"
+  )
+  OR
+  abstract:(
+    RegTech OR compliance OR "regulatory compliance"
+    OR AML OR "anti money laundering" OR "money laundering"
+    OR KYC OR "know your customer" OR "customer identification"
+    OR "identity verification" OR "identity authentication"
+    OR "transaction monitoring" OR "suspicious transaction"
+    OR "fraud detection" OR fraud OR "financial fraud"
+    OR "sanction screening" OR "watchlist screening"
+    OR "risk scoring" OR "risk assessment"
+  )
+)

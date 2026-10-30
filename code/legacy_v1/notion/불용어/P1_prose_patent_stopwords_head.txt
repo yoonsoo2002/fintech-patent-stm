@@ -1,0 +1,7 @@
+patent_stopwords = [
+# 포함/구성 관련
+'comprise', 'comprises', 'comprised', 'comprising',
+'include', 'includes', 'included', 'including', 'inclusion', 'inclusions',
+'provide', 'provides', 'provided', 'providing', 'provision', 'provisions',
+'configure', 'configures', 'configured', 'configuring', 'configuration', 'configurations',
+'contain', 'contains', 'contained', 'containing', 'container', 'containers',

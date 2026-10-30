@@ -1,0 +1,4258 @@
+# 1. 패키지 설치 (최초 1회만 실행하면 됩니다)
+install.packages("stm")
+install.packages("stringr")
+install.packages("stopwords") # 오타 수정 완료
+
+# 2. 패키지 로드 (RStudio를 새로 켤 때마다 실행해야 합니다)
+library(stm)
+library(stringr)
+library(stopwords)
+
+# 3. 데이터 불러오기 (경로의 \를 /로 모두 수정했습니다)
+# 지정해주신 절대 경로를 사용하여 파일을 불러옵니다.
+file_path <- "C:/Users/gram/Documents/핀테크 특허 분석/데이터 임베딩완료/final_fintech_patents_filtered.csv"
+mydata5 <- read.csv(file_path, fileEncoding="UTF-8", stringsAsFactors=FALSE)
+
+# 4. 텍스트 결합 (제목 가중치 2배 적용)
+mydata5$text_tt <- paste(mydata5$Title, mydata5$Title, mydata5$Abstract, sep=" ")
+
+# 5. 불용어 설정 (SMART 사전 + 커스텀)
+stwds <- stopwords(language = "en", source = "smart")
+custom <- c('invention', 'thereof', 'therefore', 'therefrom', 'system', 'method', 'apparatus', 'plurality', 'embodiment')
+csw <- c(stwds, custom)
+
+# 6. 전처리 (textProcessor) - 시간이 조금 걸릴 수 있습니다.
+proc1 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw, 
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+# 7. 데이터 정제 및 1% 희귀 단어 제거 (prepDocuments) 
+# 21,381건의 1%인 214로 lower.thresh 설정
+out1 <- prepDocuments(proc1$documents, 
+                      proc1$vocab, 
+                      proc1$meta, 
+                      lower.thresh = 214)
+# 살아남은 653개 단어 전체 목록 중 처음 100개만 눈으로 훑어보기
+head(out1$vocab, 100)
+
+# 특정 단어가 653개 안에 무사히 포함되어 있는지 검색해 보기 (TRUE가 나오면 살아있는 것)
+"generat" %in% out1$vocab
+"api" %in% out1$vocab
+"bank" %in% out1$vocab
+"open" %in% out1$vocab
+"neo" %in% out1$vocab
+"neobank" %in% out1$vocab
+# [1] K값 탐색을 위한 시드 고정 및 searchK 실행
+set.seed(2026) 
+
+# K를 10부터 80까지 10 단위로 탐색 (10, 20, 30, 40, 50, 60, 70, 80)
+# 알려주신 정확한 메타데이터 컬럼명을 prevalence 공식에 반영했습니다.
+kresult_stage1 <- searchK(documents = out1$documents, 
+                          vocab = out1$vocab, 
+                          K = seq(10, 80, by = 10), 
+                          prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                          data = out1$meta,
+                          max.em.its = 75,
+                          init.type = "Spectral")
+
+# [2] 지표 그래프 시각화
+# 이 코드를 실행하면 RStudio 우측 하단 Plots 창에 4가지 지표 그래프가 나타납니다.
+plot(kresult_stage1)
+# 현재까지 만들어진 모든 데이터를 하나의 파일로 묶어서 저장합니다.
+save.image("fintech_workspace.RData")
+# 집 컴퓨터에 stm 패키지가 없다면 이 세 줄의 주석(#)을 풀고 먼저 설치해 주세요.
+# install.packages("stm")
+# install.packages("stringr")
+# install.packages("stopwords")
+
+# 패키지 장착
+library(stm)
+library(stringr)
+library(stopwords)
+plot(kresult_stage1)
+# [1] K=50으로 임시 STM 모델 학습 (노이즈 확인용)
+set.seed(2026) 
+temp_stm_50 <- stm(documents = out1$documents, 
+                   vocab = out1$vocab, 
+                   K = 50, 
+                   prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                   data = out1$meta,
+                   max.em.its = 75, # 임시 확인용이므로 빠르게 돌립니다
+                   init.type = "Spectral")
+
+# [2] 토픽별 상위 15개 단어 추출
+topic_words_50 <- labelTopics(temp_stm_50, n = 15)
+
+# [3] 결과를 엑셀(CSV) 파일로 저장하여 노이즈 단어 사냥하기
+top_words_df_50 <- as.data.frame(topic_words_50$prob)
+write.csv(top_words_df_50, "temp_k50_top_words_review.csv", row.names = TRUE)
+# [1] 기존 불용어 + 새로 발견한 노이즈 단어들을 모두 합친 '최종 불용어 사전' 만들기
+stwds <- stopwords(language = "en", source = "smart")
+
+# 기존 단어들 + 찾아내신 단어들을 몽땅 집어넣습니다.
+custom_final <- c('invention', 'thereof', 'therefore', 'therefrom', 'system', 'method', 'apparatus', 'plurality', 'embodiment', 
+                  'compris', 'includ', 'provid', 'configur', 'contain', 
+                  'perform', 'generat', 'determin', 'obtain', 'receiv', 'send', 'transmit', 'store', 'process', 'execut', 'calcul', 'apply',
+                  'relat', 'base', 'present', 'disclos', 'step', 'mean', 'draw', 'figur', 'part', 'piec', 'field', 'technic', 'background', 'medium', 'mode', 'type', 'result', 'requir', 'prefer')
+
+csw_final <- c(stwds, custom_final)
+
+# [2] 강력해진 불용어 사전을 적용하여 텍스트 전처리 다시 하기 (시간이 조금 걸립니다!)
+# 기존 데이터와 헷갈리지 않게 이번 결과는 proc2, out2라는 새로운 이름으로 저장합니다.
+proc2 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw_final, 
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+# [3] 다시 1% 희귀 단어 제거 (214건 기준)
+out2 <- prepDocuments(proc2$documents, 
+                      proc2$vocab, 
+                      proc2$meta, 
+                      lower.thresh = 214)
+
+# (선택) 노이즈가 제거되고 최종적으로 살아남은 알짜배기 단어 개수 확인
+length(out2$vocab)
+
+# [4] 정말 깨끗해진 out2 데이터로 최종 K=50 모델 정식 학습!
+# 이번엔 최종 모델이므로 완성도를 높이기 위해 최대 반복 횟수(max.em.its)를 150으로 올립니다.
+set.seed(2026) 
+final_stm_50 <- stm(documents = out2$documents, 
+                    vocab = out2$vocab, 
+                    K = 50, 
+                    prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                    data = out2$meta,
+                    max.em.its = 150, 
+                    init.type = "Spectral")
+
+# [5] 최종 단어 추출 및 엑셀(CSV) 저장
+final_topic_words <- labelTopics(final_stm_50, n = 15)
+final_words_df <- as.data.frame(final_topic_words$prob)
+write.csv(final_words_df, "FINAL_K50_Clean_Topics.csv", row.names = TRUE)
+# [1] 질문자님이 직접 작성하신 '궁극의 특허 불용어 사전' 구성
+stwds <- stopwords(language = "en", source = "smart")
+
+# 작성해주신 모든 변형(ing, ed, s, tion 등)과 R의 축약형 잔재를 완벽히 묶었습니다.
+custom_ultimate <- c(
+  # 포함/구성 관련
+  'comprise', 'comprises', 'comprised', 'comprising', 'compris',
+  'include', 'includes', 'included', 'including', 'inclusion', 'inclusions', 'includ',
+  'provide', 'provides', 'provided', 'providing', 'provision', 'provisions', 'provid',
+  'configure', 'configures', 'configured', 'configuring', 'configuration', 'configurations', 'configur',
+  'contain', 'contains', 'contained', 'containing', 'container', 'containers',
+  
+  # 동작/수행 관련
+  'perform', 'performs', 'performed', 'performing', 'performance', 'performances',
+  'generate', 'generates', 'generated', 'generating', 'generation', 'generations', 'generator', 'generators', 'generat',
+  'determine', 'determines', 'determined', 'determining', 'determination', 'determinations', 'determin',
+  'obtain', 'obtains', 'obtained', 'obtaining', 'obtainable',
+  'receive', 'receives', 'received', 'receiving', 'receiver', 'receivers', 'receipt', 'receipts', 'receiv',
+  'send', 'sends', 'sent', 'sending', 'sender', 'senders',
+  'transmit', 'transmits', 'transmitted', 'transmitting', 'transmission', 'transmissions', 'transmitter', 'transmitters',
+  'store', 'stores', 'stored', 'storing', 'storage', 'storages',
+  'process', 'processes', 'processed', 'processing', 'processor', 'processors',
+  'execute', 'executes', 'executed', 'executing', 'execution', 'executions', 'executable', 'execut',
+  'calculate', 'calculates', 'calculated', 'calculating', 'calculation', 'calculations', 'calculator', 'calculators', 'calcul',
+  'apply', 'applies', 'applied', 'applying', 'application', 'applications', 'applicable',
+  
+  # 설명/구조 관련
+  'relate', 'relates', 'related', 'relating', 'relation', 'relations', 'relative', 'relatively', 'relat',
+  'base', 'bases', 'based', 'basing', 'basis',
+  'present', 'presents', 'presented', 'presenting', 'presentation', 'presentations', 'presently',
+  'disclose', 'discloses', 'disclosed', 'disclosing', 'disclosure', 'disclosures', 'disclos',
+  'step', 'steps', 'stepped', 'stepping',
+  'mean', 'means', 'meaning', 'meanings',
+  'draw', 'draws', 'drew', 'drawn', 'drawing', 'drawings',
+  'figure', 'figures', 'figured', 'figuring', 'figur',
+  'part', 'parts', 'parted', 'parting', 'partly',
+  'piece', 'pieces', 'pieced', 'piecing', 'piec',
+  'field', 'fields',
+  'technique', 'techniques', 'technical', 'technically', 'technic',
+  'background', 'backgrounds',
+  'result', 'results', 'resulted', 'resulting',
+  'require', 'requires', 'required', 'requiring', 'requirement', 'requirements', 'requir',
+  'prefer', 'prefers', 'preferred', 'preferring', 'preference', 'preferences', 'preferably',
+  'medium', 'mediums', 'media',
+  
+  # 필수 특허 껍데기 단어들
+  'invention', 'thereof', 'therefore', 'therefrom', 'system', 'systems', 'method', 'methods', 'apparatus', 'plurality', 'embodiment', 'embodiments'
+)
+
+csw_final <- c(stwds, custom_ultimate)
+
+# [2] 완벽해진 사전을 적용하여 텍스트 전처리 다시 수행 (기존 proc2 덮어쓰기)
+proc2 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw_final, 
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+# [3] 1% 희귀 단어 제거 (214건 기준, 기존 out2 덮어쓰기)
+out2 <- prepDocuments(proc2$documents, 
+                      proc2$vocab, 
+                      proc2$meta, 
+                      lower.thresh = 214)
+
+# 🔥 드디어 진짜 알맹이만 남은 단어 개수 확인! 콘솔 창을 봐주세요.
+print(paste("최종 살아남은 단어 개수:", length(out2$vocab)))
+
+# [4] 정말 깨끗해진 out2 데이터로 최종 K=50 모델 덮어쓰기! (시간 소요)
+set.seed(2026) 
+final_stm_50 <- stm(documents = out2$documents, 
+                    vocab = out2$vocab, 
+                    K = 50, 
+                    prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                    data = out2$meta,
+                    max.em.its = 150, 
+                    init.type = "Spectral")
+
+# [5] 찐 최종 단어 추출 및 엑셀(CSV) 덮어쓰기
+final_topic_words <- labelTopics(final_stm_50, n = 15)
+final_words_df <- as.data.frame(final_topic_words$prob)
+write.csv(final_words_df, "FINAL_K50_Ultimate_Clean_Topics.csv", row.names = TRUE)
+# 이미 만들어진 final_stm_50 모델에서 FREX 기준 상위 15개 단어만 쏙 뽑아냅니다.
+frex_words <- labelTopics(final_stm_50, n = 15)$frex
+
+# 결과를 보기 좋게 엑셀(CSV)로 저장합니다.
+write.csv(frex_words, "FINAL_K50_FREX_Words.csv", row.names = TRUE)
+# [1] 완벽하게 정제된 out2 데이터로 다시 넓은 범위(10~80) K값 탐색
+set.seed(2026) 
+
+# K를 10부터 80까지 10 단위로 탐색합니다. 
+# (단어 수가 많이 줄어들었기 때문에 어제보다는 빨리 끝납니다!)
+kresult_stage2_broad <- searchK(documents = out2$documents, 
+                                vocab = out2$vocab, 
+                                K = seq(10, 80, by = 10), 
+                                prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                                data = out2$meta,
+                                max.em.its = 75,
+                                init.type = "Spectral")
+
+# [2] 새로운 지표 그래프 시각화
+plot(kresult_stage2_broad)
+# [1] 컴퓨터의 남는 두뇌(CPU) 깨우기
+library(parallel)
+num_cores <- detectCores() - 1 
+# [1] searchK 결과에서 K값, 의미적 일관성, 배타성 데이터만 쏙 뽑아내기
+K_values <- unlist(kresult_stage2_broad$results$K)
+semcoh <- unlist(kresult_stage2_broad$results$semcoh)
+exclus <- unlist(kresult_stage2_broad$results$exclus)
+
+# [2] 두 지표를 공평하게 비교하기 위해 Z-점수(표준점수)로 변환
+z_semcoh <- as.numeric(scale(semcoh))
+z_exclus <- as.numeric(scale(exclus))
+
+# [3] 논문 방법론대로 두 Z-점수의 평균(가중 점수) 산출
+combined_score <- (z_semcoh + z_exclus) / 2
+
+# [4] 결과를 한눈에 보기 쉽게 표(데이터프레임)로 만들기
+evaluation_df <- data.frame(
+  K = K_values,
+  Coherence_Z = round(z_semcoh, 3),
+  Exclusivity_Z = round(z_exclus, 3),
+  Final_Score = round(combined_score, 3)
+)
+
+# [5] 대망의 랭킹 발표! (Final_Score가 가장 높은 순서대로 정렬)
+sorted_eval <- evaluation_df[order(-evaluation_df$Final_Score), ]
+print("🏆 K값 최적화 랭킹 (Z-Score 기준) 🏆")
+print(sorted_eval)
+
+# [6] 눈으로 확인하기 쉬운 꺾은선 그래프 그리기
+plot(evaluation_df$K, evaluation_df$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K: Coherence & Exclusivity Z-Score")
+# 1. 패키지 로드 (RStudio를 새로 켤 때마다 무조건 실행!)
+library(stm)
+library(stringr)
+library(stopwords)
+
+# 2. (선택사항) 만약 시각화나 추가 분석을 위해 다른 패키지가 필요하다면 더 추가하세요.
+library(ggplot2) 
+
+# 3. 작업 경로 확인 (내가 저장한 .RData 파일이 있는 폴더인지 확인)
+getwd()
+# --- 여기서부터 2차 탐색 시작 ---
+
+# [1] 터보 엔진 준비 (컴퓨터의 남는 두뇌 깨우기)
+library(parallel)
+num_cores <- detectCores() - 1 
+
+# [2] 5~35 구간 (5단위) 촘촘한 탐색 시작 (깨끗한 out2 데이터 사용!)
+set.seed(2026) 
+# K를 5부터 35까지 5 단위로 탐색합니다. (5, 10, 15, 20, 25, 30, 35)
+kresult_stage2_narrow <- searchK(documents = out2$documents, 
+                                 vocab = out2$vocab, 
+                                 K = seq(5, 35, by = 5), 
+                                 prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                                 data = out2$meta,
+                                 max.em.its = 40, # (어차피 좁은 범위라 금방 끝나서 조기종료 40만 줍니다)
+                                 init.type = "Spectral")
+
+# [2] 새로운 지표 그래프 시각화 (기존처럼 4가지 그래프가 뜹니다)
+plot(kresult_stage2_narrow)
+
+# [3] searchK 결과에서 K값, 의미적 일관성, 배타성 데이터만 쏙 뽑아내기
+K_values <- unlist(kresult_stage2_narrow$results$K)
+semcoh <- unlist(kresult_stage2_narrow$results$semcoh)
+exclus <- unlist(kresult_stage2_narrow$results$exclus)
+
+# [4] 두 지표를 공평하게 비교하기 위해 Z-점수(표준점수)로 변환
+z_semcoh <- as.numeric(scale(semcoh))
+z_exclus <- as.numeric(scale(exclus))
+
+# [5] 논문 방법론대로 두 Z-점수의 평균(가중 점수) 산출
+combined_score <- (z_semcoh + z_exclus) / 2
+
+# [6] 결과를 한눈에 보기 쉽게 표(데이터프레임)로 만들기
+evaluation_df <- data.frame(
+  K = K_values,
+  Coherence_Z = round(z_semcoh, 3),
+  Exclusivity_Z = round(z_exclus, 3),
+  Final_Score = round(combined_score, 3)
+)
+
+# [7] 대망의 랭킹 발표! (Final_Score가 가장 높은 순서대로 정렬)
+sorted_eval <- evaluation_df[order(-evaluation_df$Final_Score), ]
+print("🏆 K=5~35 구간 세부 탐색 랭킹 (Z-Score 기준) 🏆")
+print(sorted_eval)
+
+# [8] 눈으로 확인하기 쉬운 꺾은선 그래프 그리기 (기존과 똑같은 빨간선 그래프)
+plot(evaluation_df$K, evaluation_df$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K: Coherence & Exclusivity Z-Score")
+# [1] 완벽하게 정제된 out2 데이터로 다시 초정밀 범위(7~20) K값 탐색
+set.seed(2026) 
+
+# K를 7부터 20까지 1 단위로 탐색합니다. (7, 8, 9, 10, ... 20)
+kresult_stage3_micro <- searchK(documents = out2$documents, 
+                                vocab = out2$vocab, 
+                                K = 7:20, 
+                                prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                                data = out2$meta,
+                                max.em.its = 40, # (조기종료 유지 - 총 14개 모델이므로 금방 끝납니다)
+                                init.type = "Spectral")
+
+# [2] 새로운 지표 그래프 시각화 (기존처럼 4가지 그래프가 뜹니다)
+plot(kresult_stage3_micro)
+
+# [3] searchK 결과에서 K값, 의미적 일관성, 배타성 데이터만 쏙 뽑아내기
+K_values <- unlist(kresult_stage3_micro$results$K)
+semcoh <- unlist(kresult_stage3_micro$results$semcoh)
+exclus <- unlist(kresult_stage3_micro$results$exclus)
+
+# [4] 두 지표를 공평하게 비교하기 위해 Z-점수(표준점수)로 변환
+z_semcoh <- as.numeric(scale(semcoh))
+z_exclus <- as.numeric(scale(exclus))
+
+# [5] 논문 방법론대로 두 Z-점수의 평균(가중 점수) 산출
+combined_score <- (z_semcoh + z_exclus) / 2
+
+# [6] 결과를 한눈에 보기 쉽게 표(데이터프레임)로 만들기
+evaluation_df <- data.frame(
+  K = K_values,
+  Coherence_Z = round(z_semcoh, 3),
+  Exclusivity_Z = round(z_exclus, 3),
+  Final_Score = round(combined_score, 3)
+)
+
+# [7] 대망의 랭킹 발표! (Final_Score가 가장 높은 순서대로 정렬)
+sorted_eval <- evaluation_df[order(-evaluation_df$Final_Score), ]
+print("🏆 K=7~20 초정밀 탐색 랭킹 (Z-Score 기준) 🏆")
+print(sorted_eval)
+
+# [8] 눈으로 확인하기 쉬운 꺾은선 그래프 그리기 (기존과 똑같은 빨간선 그래프)
+plot(evaluation_df$K, evaluation_df$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K: Coherence & Exclusivity (7-20)")
+# 현재 메모리에 있는 모든 데이터와 모델을 하나의 파일로 묶어서 영구 저장합니다.
+save.image("fintech_workspace_final.RData")
+# 1. 패키지를 먼저 불러옵니다. (매일 필수)
+library(stm)
+library(stringr)
+library(stopwords)
+
+load("C:/Users/gram/Documents/핀테크 특허 분석/데이터 임베딩완료/fintech_workspace.RData")
+# ==========================================
+# 📊 1. 넓은 범위 (K=10~80, 10단위) Z-score 표 저장
+# ==========================================
+K_broad <- unlist(kresult_stage2_broad$results$K)
+z_semcoh_broad <- as.numeric(scale(unlist(kresult_stage2_broad$results$semcoh)))
+z_exclus_broad <- as.numeric(scale(unlist(kresult_stage2_broad$results$exclus)))
+score_broad <- (z_semcoh_broad + z_exclus_broad) / 2
+
+df_broad <- data.frame(K = K_broad, Coherence_Z = round(z_semcoh_broad, 3), 
+                       Exclusivity_Z = round(z_exclus_broad, 3), Final_Score = round(score_broad, 3))
+df_broad <- df_broad[order(-df_broad$Final_Score), ] # 1등부터 정렬
+
+write.csv(df_broad, "Zscore_Table_1_Broad(10_80).csv", row.names = FALSE)
+print("✅ [1단계] 10~80 구간 Z-score 표 엑셀 저장 완료!")
+# ==========================================
+# 🚀 1. 누락된 중간 범위(5~35) 다시 돌리고 표/그래프 저장
+# ==========================================
+set.seed(2026) 
+kresult_stage2_narrow <- searchK(documents = out2$documents, vocab = out2$vocab, 
+                                 K = seq(5, 35, by = 5), 
+                                 prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                                 data = out2$meta, max.em.its = 40, init.type = "Spectral")
+
+# 표 저장
+K_narrow <- unlist(kresult_stage2_narrow$results$K)
+z_semcoh_narrow <- as.numeric(scale(unlist(kresult_stage2_narrow$results$semcoh)))
+z_exclus_narrow <- as.numeric(scale(unlist(kresult_stage2_narrow$results$exclus)))
+score_narrow <- (z_semcoh_narrow + z_exclus_narrow) / 2
+df_narrow <- data.frame(K = K_narrow, Coherence_Z = round(z_semcoh_narrow, 3), 
+                        Exclusivity_Z = round(z_exclus_narrow, 3), Final_Score = round(score_narrow, 3))
+df_narrow <- df_narrow[order(-df_narrow$Final_Score), ]
+write.csv(df_narrow, "Zscore_Table_2_Narrow(5_35).csv", row.names = FALSE)
+
+# 그래프 저장
+png(filename = "Zscore_Plot_2_Narrow(5_35).png", width = 1200, height = 800, res = 150)
+plot(df_narrow$K, df_narrow$Final_Score, type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", ylab="Combined Z-Score",
+     main="Optimal K Narrow Search: Coherence & Exclusivity Z-Score")
+dev.off()
+print("✅ [2단계] 5~35 구간 탐색 및 파일(표/그래프) 저장 완료!")
+
+
+# ==========================================
+# 🚀 2. 누락된 초정밀 범위(7~20) 다시 돌리고 표/그래프 저장
+# ==========================================
+set.seed(2026) 
+kresult_stage3_micro <- searchK(documents = out2$documents, vocab = out2$vocab, 
+                                K = 7:20, 
+                                prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                                data = out2$meta, max.em.its = 40, init.type = "Spectral")
+
+# 표 저장
+K_micro <- unlist(kresult_stage3_micro$results$K)
+z_semcoh_micro <- as.numeric(scale(unlist(kresult_stage3_micro$results$semcoh)))
+z_exclus_micro <- as.numeric(scale(unlist(kresult_stage3_micro$results$exclus)))
+score_micro <- (z_semcoh_micro + z_exclus_micro) / 2
+df_micro <- data.frame(K = K_micro, Coherence_Z = round(z_semcoh_micro, 3), 
+                       Exclusivity_Z = round(z_exclus_micro, 3), Final_Score = round(score_micro, 3))
+df_micro <- df_micro[order(-df_micro$Final_Score), ]
+write.csv(df_micro, "Zscore_Table_3_Micro(7_20).csv", row.names = FALSE)
+
+# 그래프 저장
+png(filename = "Zscore_Plot_3_Micro(7_20).png", width = 1200, height = 800, res = 150)
+plot(df_micro$K, df_micro$Final_Score, type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", ylab="Combined Z-Score",
+     main="Optimal K Micro Search: Coherence & Exclusivity (7-20)")
+dev.off()
+print("✅ [3단계] 7~20 구간 탐색 및 파일(표/그래프) 저장 완료!")
+
+# ==========================================
+# 📂 0. 앞으로 저장될 기본 폴더 위치를 영구 고정!
+# ==========================================
+# 윈도우 폴더 경로의 \를 /로 수정하여 적용했습니다.
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# 확인: 현재 저장 위치가 잘 바뀌었는지 콘솔에 출력해봅니다.
+print(paste("현재 저장 폴더:", getwd()))
+exists("kresult_stage2_broad")
+# ==========================================
+# 📊 1. 넓은 범위(10~80) - 이미 학습된 결과에서 표/그래프만 즉시 추출! (시간 0초 소요)
+# ==========================================
+# (탐색 없이 메모리에 있는 결과만 바로 가져옵니다)
+K_broad <- unlist(kresult_stage2_broad$results$K)
+z_semcoh_broad <- as.numeric(scale(unlist(kresult_stage2_broad$results$semcoh)))
+z_exclus_broad <- as.numeric(scale(unlist(kresult_stage2_broad$results$exclus)))
+score_broad <- (z_semcoh_broad + z_exclus_broad) / 2
+
+df_broad <- data.frame(K = K_broad, Coherence_Z = round(z_semcoh_broad, 3), 
+                       Exclusivity_Z = round(z_exclus_broad, 3), Final_Score = round(score_broad, 3))
+df_broad_sorted <- df_broad[order(-df_broad$Final_Score), ]
+
+# 표 저장
+write.csv(df_broad_sorted, "Zscore_Table_1_Broad(10_80)_75its.csv", row.names = FALSE)
+
+# 그래프 저장
+png(filename = "Zscore_Plot_1_Broad(10_80)_75its.png", width = 1200, height = 800, res = 150)
+plot(df_broad$K, df_broad$Final_Score, type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", ylab="Combined Z-Score",
+     main="Optimal K Broad Search (75 its): Coherence & Exclusivity Z-Score")
+dev.off()
+print("✅ [1단계] 10~80 구간 (학습 생략) 표 및 그래프 저장 완료!")
+
+
+# ==========================================
+# 🚀 2. 중간 범위(5~35) - 75번 반복으로 정밀 재학습 후 표/그래프 저장
+# ==========================================
+set.seed(2026) 
+kresult_stage2_narrow_75 <- searchK(documents = out2$documents, vocab = out2$vocab, 
+                                    K = seq(5, 35, by = 5), 
+                                    prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                                    data = out2$meta, max.em.its = 75, init.type = "Spectral") # 💡 75회 반영
+
+# 표 저장
+K_narrow <- unlist(kresult_stage2_narrow_75$results$K)
+z_semcoh_narrow <- as.numeric(scale(unlist(kresult_stage2_narrow_75$results$semcoh)))
+z_exclus_narrow <- as.numeric(scale(unlist(kresult_stage2_narrow_75$results$exclus)))
+score_narrow <- (z_semcoh_narrow + z_exclus_narrow) / 2
+
+df_narrow <- data.frame(K = K_narrow, Coherence_Z = round(z_semcoh_narrow, 3), 
+                        Exclusivity_Z = round(z_exclus_narrow, 3), Final_Score = round(score_narrow, 3))
+df_narrow_sorted <- df_narrow[order(-df_narrow$Final_Score), ]
+write.csv(df_narrow_sorted, "Zscore_Table_2_Narrow(5_35)_75its.csv", row.names = FALSE)
+
+# 그래프 저장
+png(filename = "Zscore_Plot_2_Narrow(5_35)_75its.png", width = 1200, height = 800, res = 150)
+plot(df_narrow$K, df_narrow$Final_Score, type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", ylab="Combined Z-Score",
+     main="Optimal K Narrow Search (75 its): Coherence & Exclusivity Z-Score")
+dev.off()
+print("✅ [2단계] 5~35 구간 (반복 75회) 탐색 및 저장 완료!")
+
+
+# ==========================================
+# 🚀 3. 초정밀 범위(7~20) - 75번 반복으로 정밀 재학습 후 표/그래프 저장
+# ==========================================
+set.seed(2026) 
+kresult_stage3_micro_75 <- searchK(documents = out2$documents, vocab = out2$vocab, 
+                                   K = 7:20, 
+                                   prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                                   data = out2$meta, max.em.its = 75, init.type = "Spectral") # 💡 75회 반영
+
+# 표 저장
+K_micro <- unlist(kresult_stage3_micro_75$results$K)
+z_semcoh_micro <- as.numeric(scale(unlist(kresult_stage3_micro_75$results$semcoh)))
+z_exclus_micro <- as.numeric(scale(unlist(kresult_stage3_micro_75$results$exclus)))
+score_micro <- (z_semcoh_micro + z_exclus_micro) / 2
+
+df_micro <- data.frame(K = K_micro, Coherence_Z = round(z_semcoh_micro, 3), 
+                       Exclusivity_Z = round(z_exclus_micro, 3), Final_Score = round(score_micro, 3))
+df_micro_sorted <- df_micro[order(-df_micro$Final_Score), ]
+write.csv(df_micro_sorted, "Zscore_Table_3_Micro(7_20)_75its.csv", row.names = FALSE)
+
+# 그래프 저장
+png(filename = "Zscore_Plot_3_Micro(7_20)_75its.png", width = 1200, height = 800, res = 150)
+plot(df_micro$K, df_micro$Final_Score, type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", ylab="Combined Z-Score",
+     main="Optimal K Micro Search (75 its): Coherence & Exclusivity Z-Score")
+dev.off()
+print("✅ [3단계] 7~20 구간 (반복 75회) 탐색 및 저장 완료!")
+
+# ==========================================
+# 🏆 대망의 최종 모델 K=19 정식 학습 시작
+# ==========================================
+# [1] 시드 고정 및 모델 학습 (완벽한 수렴을 위해 150회 부여)
+set.seed(2026) 
+final_stm_19 <- stm(documents = out2$documents, 
+                    vocab = out2$vocab, 
+                    K = 19, 
+                    prevalence = ~ Origin_Country + s(Publication.Year) + log1p(Cited.by.Patent.Count),
+                    data = out2$meta,
+                    max.em.its = 150,        # 💡 최종 모델이므로 150 넉넉하게 줍니다.
+                    init.type = "Spectral")
+
+# [2] FREX 지표를 기준으로 각 토픽의 핵심 시그니처 단어 추출 (상위 15개)
+topic_labels_19 <- labelTopics(final_stm_19, n = 15)
+frex_words_19 <- topic_labels_19$frex
+
+# [3] FREX 단어 결과를 엑셀(CSV) 파일로 예쁘게 저장
+write.csv(frex_words_19, "FINAL_K19_FREX_Words.csv", row.names = TRUE)
+print("🎉 [성공] K=19 최종 FREX 단어 엑셀 저장 완료!")
+
+# [4] (매우 중요) 완성된 최종 모델만 따로 안전하게 영구 보존!
+save(final_stm_19, file = "fintech_final_model_K19.RData")
+print("💾 [성공] K=19 최종 모델 백업 완료! (이제 시각화 준비 끝)")
+# 현재 R에 있는 모든 데이터와 분석 결과를 통째로 영구 저장합니다.
+save.image("k19까지.RData")
+# 1. 작업 폴더 다시 지정 (어제 세팅한 그곳으로!)
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# 2. 패키지 불러오기 (매일 필수)
+library(stm)
+library(stringr)
+library(stopwords)
+
+# 3. 어제 퇴근 전에 저장해둔 데이터 덩어리 통째로 불러오기
+load("k19까지.RData")
+# ==========================================
+# 🧹 0. 숫자 "10"을 궁극의 불용어 사전에 추가하고 전처리 업데이트!
+# ==========================================
+# 질문자님의 원본 사전(csw_final)에 "10"과 "10s"를 추가합니다.
+csw_final_new <- c(csw_final, "10", "10s")
+
+# "10"이 추가된 새로운 사전으로 전처리를 다시 수행합니다. (이번엔 out3로 저장)
+# 💡 원본 데이터인 mydata5와 mydata5$text_tt를 정확히 사용합니다!
+proc3 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw_final_new, # 새로운 사전 적용
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+# 1% 희귀 단어 제거 (214건 기준) -> 완벽히 깨끗해진 최종 데이터 out3 탄생!
+out3 <- prepDocuments(proc3$documents, proc3$vocab, proc3$meta, lower.thresh = 214)
+print("✅ 숫자 10이 완벽하게 제거된 깨끗한 데이터(out3)가 준비되었습니다!")
+# ==========================================
+# 🔍 전처리 결과 확인용: 최종 단어 사전 추출 및 저장
+# ==========================================
+# 1. 저장할 폴더 위치 확인 및 설정
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# 2. 최종적으로 살아남은 단어들(out3$vocab)을 알파벳 순으로 정렬하여 표로 만들기
+vocab_df <- data.frame(Word = out3$vocab)
+vocab_df <- vocab_df[order(vocab_df$Word), , drop = FALSE] # 보기 편하게 정렬
+
+# 3. 엑셀(CSV) 파일로 저장
+write.csv(vocab_df, "전처리_확인용_최종단어사전.csv", row.names = FALSE)
+print("✅ [저장 완료] '전처리_확인용_최종단어사전.csv' 파일이 k찾기 폴더에 생성되었습니다!")
+# ==========================================
+# 🧹 0. "10"에 이어 "100", "200"까지 완벽하게 불용어 사전에 추가!
+# ==========================================
+# 10, 100, 200 (그리고 복수형 s 붙은 것까지) 싹 다 추가합니다.
+csw_final_new <- c(csw_final, "10", "10s", "100", "100s", "200", "200s")
+
+# 이후 아래 코드는 아까와 동일하게 쭈욱 실행하시면 됩니다!
+proc3 <- textProcessor(documents = mydata5$text_tt, 
+                       metadata = mydata5, 
+                       lowercase = TRUE, 
+                       removepunctuation = TRUE, 
+                       customstopwords = csw_final_new, # 새로운 사전 적용
+                       removestopwords = TRUE, 
+                       removenumbers = FALSE, 
+                       stem = TRUE, 
+                       wordLengths = c(2,Inf))
+
+out3 <- prepDocuments(proc3$documents, proc3$vocab, proc3$meta, lower.thresh = 214)
+
+# 1. 최종 전처리된 데이터(out3)에서 단어 목록만 뽑아 표로 만들기
+vocab_df <- data.frame(Word = out3$vocab)
+
+# 2. 눈으로 확인하기 쉽게 알파벳 순서대로 정렬
+vocab_df <- vocab_df[order(vocab_df$Word), , drop = FALSE]
+
+# 3. 엑셀(CSV) 파일로 저장
+write.csv(vocab_df, "최종전처리_확인용_최종단어사전.csv", row.names = FALSE)
+
+print("✅ [저장 완료] '최종전처리_확인용_최종단어사전.csv' 파일이 생성되었습니다!")
+# ==========================================
+# 📊 1단계: 조정된 피인용수(C_adj_i) 계산하기
+# ==========================================
+# (1) 분모 계산: 특허가 출원된 연도(Publication.Year)별 '평균 피인용수(C_avg_j)'를 구합니다.
+out3$meta$C_avg_j <- ave(out3$meta$Cited.by.Patent.Count, 
+                         out3$meta$Publication.Year, 
+                         FUN = function(x) mean(x, na.rm = TRUE))
+
+# (2) 수식 적용: 개별 특허의 피인용수를 해당 연도 평균으로 나눕니다. 
+# (만약 특정 연도에 피인용수가 모두 0이라서 평균이 0이 될 경우, 수학적 에러(분모가 0)를 방지하기 위해 0으로 처리합니다.)
+out3$meta$C_adj_i <- ifelse(out3$meta$C_avg_j == 0, 
+                            0, 
+                            out3$meta$Cited.by.Patent.Count / out3$meta$C_avg_j)
+
+# (3) 눈으로 팩트 체크: 계산이 잘 되었는지 상위 10개 특허만 뽑아서 확인해 봅니다.
+print("--- 팩트 체크: 연도별 평균 및 조정된 피인용수 계산 결과 ---")
+print(head(out3$meta[, c("Publication.Year", "Cited.by.Patent.Count", "C_avg_j", "C_adj_i")], 10))
+# ==========================================
+# 🚀 2단계: 넓은 범위(10~80) 탐색 및 결과 저장 (조정된 피인용수 적용)
+# ==========================================
+# (작업 폴더는 이미 'k찾기'로 설정되어 있다고 가정합니다)
+
+set.seed(2026) 
+# 💡 핵심: prevalence 공식에 log1p(...) 대신 C_adj_i 가 들어갑니다!
+kresult_broad_adj <- searchK(documents = out3$documents, 
+                             vocab = out3$vocab, 
+                             K = seq(10, 80, by = 10), 
+                             prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, 
+                             data = out3$meta, 
+                             max.em.its = 75, 
+                             init.type = "Spectral")
+
+# [결과 저장용 데이터 정리]
+K_broad <- unlist(kresult_broad_adj$results$K)
+z_semcoh_broad <- as.numeric(scale(unlist(kresult_broad_adj$results$semcoh)))
+z_exclus_broad <- as.numeric(scale(unlist(kresult_broad_adj$results$exclus)))
+score_broad <- (z_semcoh_broad + z_exclus_broad) / 2
+
+df_broad_adj <- data.frame(K = K_broad, 
+                           Coherence_Z = round(z_semcoh_broad, 3), 
+                           Exclusivity_Z = round(z_exclus_broad, 3), 
+                           Final_Score = round(score_broad, 3))
+
+# 1등 점수부터 순서대로 정렬
+df_broad_adj_sorted <- df_broad_adj[order(-df_broad_adj$Final_Score), ]
+
+# [CSV 표 저장]
+write.csv(df_broad_adj_sorted, "Zscore_Table_1_Broad(10_80)_Adj.csv", row.names = FALSE)
+print("✅ [표 저장 완료] Zscore_Table_1_Broad(10_80)_Adj.csv 파일 생성!")
+
+# [꺾은선 그래프(PNG) 저장]
+png(filename = "Zscore_Plot_1_Broad(10_80)_Adj.png", width = 1200, height = 800, res = 150)
+plot(df_broad_adj$K, df_broad_adj$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K Broad Search (Adj. Citation): Coherence & Exclusivity")
+dev.off()
+print("🖼️ [그래프 저장 완료] Zscore_Plot_1_Broad(10_80)_Adj.png 파일 생성!")
+# ==========================================
+# 🚀 3단계: 중간 범위(5~35) 정밀 탐색 및 결과 저장 (조정된 피인용수 적용)
+# ==========================================
+
+set.seed(2026) 
+# 💡 핵심: K 범위를 5부터 35까지 5단위로 변경했습니다.
+kresult_narrow_adj <- searchK(documents = out3$documents, 
+                              vocab = out3$vocab, 
+                              K = seq(5, 35, by = 5), 
+                              prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, 
+                              data = out3$meta, 
+                              max.em.its = 75, 
+                              init.type = "Spectral")
+
+# [결과 저장용 데이터 정리]
+K_narrow <- unlist(kresult_narrow_adj$results$K)
+z_semcoh_narrow <- as.numeric(scale(unlist(kresult_narrow_adj$results$semcoh)))
+z_exclus_narrow <- as.numeric(scale(unlist(kresult_narrow_adj$results$exclus)))
+score_narrow <- (z_semcoh_narrow + z_exclus_narrow) / 2
+
+df_narrow_adj <- data.frame(K = K_narrow, 
+                            Coherence_Z = round(z_semcoh_narrow, 3), 
+                            Exclusivity_Z = round(z_exclus_narrow, 3), 
+                            Final_Score = round(score_narrow, 3))
+
+# 1등 점수부터 순서대로 정렬
+df_narrow_adj_sorted <- df_narrow_adj[order(-df_narrow_adj$Final_Score), ]
+
+# [CSV 표 저장]
+write.csv(df_narrow_adj_sorted, "Zscore_Table_2_Narrow(5_35)_Adj.csv", row.names = FALSE)
+print("✅ [표 저장 완료] Zscore_Table_2_Narrow(5_35)_Adj.csv 파일 생성!")
+
+# [꺾은선 그래프(PNG) 저장]
+png(filename = "Zscore_Plot_2_Narrow(5_35)_Adj.png", width = 1200, height = 800, res = 150)
+plot(df_narrow_adj$K, df_narrow_adj$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K Narrow Search (Adj. Citation): Coherence & Exclusivity")
+dev.off()
+print("🖼️ [그래프 저장 완료] Zscore_Plot_2_Narrow(5_35)_Adj.png 파일 생성!")
+# ==========================================
+# 🚀 4단계: 초정밀 범위(15~25) 탐색 및 결과 저장 (조정된 피인용수 적용)
+# ==========================================
+# (작업 폴더는 이미 'k찾기'로 설정되어 있다고 가정합니다)
+
+set.seed(2026) 
+# 💡 K를 15부터 25까지 1단위(15, 16, 17 ... 25)로 탐색합니다!
+kresult_micro_adj <- searchK(documents = out3$documents, 
+                             vocab = out3$vocab, 
+                             K = 15:25, 
+                             prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, 
+                             data = out3$meta, 
+                             max.em.its = 75, 
+                             init.type = "Spectral")
+
+# [결과 저장용 데이터 정리]
+K_micro <- unlist(kresult_micro_adj$results$K)
+z_semcoh_micro <- as.numeric(scale(unlist(kresult_micro_adj$results$semcoh)))
+z_exclus_micro <- as.numeric(scale(unlist(kresult_micro_adj$results$exclus)))
+score_micro <- (z_semcoh_micro + z_exclus_micro) / 2
+
+# 원본 데이터 (그래프용: K가 15, 16, 17... 순서대로 배열됨)
+df_micro_adj <- data.frame(K = K_micro, 
+                           Coherence_Z = round(z_semcoh_micro, 3), 
+                           Exclusivity_Z = round(z_exclus_micro, 3), 
+                           Final_Score = round(score_micro, 3))
+
+# 표 저장용 (1등 점수부터 순서대로 정렬됨)
+df_micro_adj_sorted <- df_micro_adj[order(-df_micro_adj$Final_Score), ]
+
+# [CSV 표 저장]
+write.csv(df_micro_adj_sorted, "Zscore_Table_3_Micro(15_25)_Adj.csv", row.names = FALSE)
+print("✅ [표 저장 완료] Zscore_Table_3_Micro(15_25)_Adj.csv 파일 생성!")
+
+# [꺾은선 그래프(PNG) 저장] 
+# 원본 데이터(df_micro_adj)를 사용하므로 15부터 25까지 선이 예쁘게 순서대로 이어집니다.
+png(filename = "Zscore_Plot_3_Micro(15_25)_Adj.png", width = 1200, height = 800, res = 150)
+plot(df_micro_adj$K, df_micro_adj$Final_Score, 
+     type="b", pch=19, col="red", lwd=2,
+     xlab="Number of Topics (K)", 
+     ylab="Combined Z-Score",
+     main="Optimal K Micro Search (Adj. Citation): Coherence & Exclusivity")
+dev.off()
+print("🖼️ [그래프 저장 완료] Zscore_Plot_3_Micro(15_25)_Adj.png 파일 생성!")
+# ==========================================
+# 🏆 대망의 최종 모델 K=20 정식 학습 시작 (조정된 피인용수 적용)
+# ==========================================
+# (작업 폴더는 'k찾기'로 설정되어 있다고 가정합니다)
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# [1] 시드 고정 및 모델 학습 (완벽한 수렴을 위해 반복 횟수 150회 부여)
+set.seed(2026) 
+final_stm_20_adj <- stm(documents = out3$documents, 
+                        vocab = out3$vocab, 
+                        K = 20, 
+                        prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, # 💡 조정 피인용수 탑재!
+                        data = out3$meta,
+                        max.em.its = 150,        # 💡 최종 모델용 최대 반복 횟수
+                        init.type = "Spectral")
+
+# [2] FREX 지표를 기준으로 각 토픽의 핵심 시그니처 단어 추출 (상위 15개)
+topic_labels_20_adj <- labelTopics(final_stm_20_adj, n = 15)
+frex_words_20_adj <- topic_labels_20_adj$frex
+
+# [3] FREX 단어 결과를 엑셀(CSV) 파일로 예쁘게 저장
+write.csv(frex_words_20_adj, "FINAL_K20_FREX_Words_Adj.csv", row.names = TRUE)
+print("🎉 [성공] K=20 최종 FREX 단어 엑셀 저장 완료!")
+
+# [4] (매우 중요) 완성된 최종 모델만 따로 안전하게 영구 보존!
+save(final_stm_20_adj, file = "fintech_final_model_K20_Adj.RData")
+print("💾 [성공] K=20 최종 모델(조정 피인용수 적용) 백업 완료! (시각화 준비 끝)")
+
+# 필요한 라이브러리 로드
+library(ggplot2)
+library(dplyr)
+library(tidytext)
+
+# [1] 데이터 추출: 각 토픽의 평균 비중 계산
+theta_mean <- colMeans(final_stm_20_adj$theta)
+topic_data <- data.frame(
+  topic = paste0("Topic ", 1:20),
+  proportion = theta_mean
+)
+
+# [2] 시각화 (ggplot2)
+# 비중이 높은 순서대로 정렬하여 시각화합니다.
+p1 <- ggplot(topic_data, aes(x = reorder(topic, proportion), y = proportion)) +
+  geom_col(fill = "steelblue", width = 0.7) +  # 막대 색상 및 두께 조절
+  coord_flip() +                                # 가로형 그래프로 전환
+  labs(
+    title = "Top Topics by Expected Topic Proportions",
+    subtitle = "IP5 FinTech Patent Analysis (K=20)",
+    x = "Topics",
+    y = "Expected Topic Proportions"
+  ) +
+  theme_minimal() +                             # 깔끔한 테마 적용
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(size = 10)
+  )
+
+# [3] 그래프 출력
+print(p1)
+
+# [4] 파일 저장 (PNG 형식, 고해상도)
+ggsave("TOPIC_PROPORTION_K20.png", plot = p1, width = 8, height = 10, dpi = 300)
+
+top_words_frex <- t(frex_words_20_adj[, 1:10]) # 상위 10개 단어
+colnames(top_words_frex) <- paste0("Topic ", 1:20)
+
+# [2] 시각화를 위해 데이터 프레임 형태로 변환 (Long format)
+frex_df <- as.data.frame(top_words_frex) %>%
+  mutate(rank = row_number()) %>%
+  pivot_longer(cols = starts_with("Topic"), names_to = "topic", values_to = "word")
+# 1. 패키지 설치 (혹시 설치가 안 되어 있다면 한 번만 실행)
+# install.packages("tidyverse") 
+
+# 2. 통합 라이브러리 로드 (이게 가장 속 편합니다)
+library(tidyverse)
+library(stm)
+library(tidytext)
+
+# 3. 이제 다시 데이터 변환 시도!
+frex_df <- as.data.frame(top_words_frex) %>%
+  mutate(rank = row_number()) %>%
+  pivot_longer(cols = starts_with("Topic"), names_to = "topic", values_to = "word")
+
+# 에러 없이 잘 넘어갔다면 확인용 출력
+head(frex_df)
+# [1] 데이터 변환 (이제 pivot_longer가 잘 작동할 거예요!)
+frex_df <- as.data.frame(top_words_frex) %>%
+  mutate(rank = row_number()) %>%
+  pivot_longer(cols = starts_with("Topic"), names_to = "topic", values_to = "word")
+
+# [2] ggplot2를 이용한 격자형(Facet) 시각화
+p2 <- ggplot(frex_df, aes(x = reorder(word, -rank), y = 1, label = word)) +
+  geom_text(size = 3.5, color = "darkblue", fontface = "bold") +
+  # 20개 토픽을 4열로 배치 (K=20이므로 5행 4열 구성)
+  facet_wrap(~ factor(topic, levels = paste0("Topic ", 1:20)), scales = "free", ncol = 4) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Top 10 FREX Words per Topic",
+    subtitle = "IP5 FinTech Patents - Unique Topic Signatures",
+    x = NULL, y = NULL
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "gray90", color = "white"),
+    strip.text = element_text(face = "bold")
+  )
+
+# [3] 그래프 출력
+print(p2)
+
+# [4] 파일 저장
+ggsave("TOPIC_FREX_WORDS_GRID.png", plot = p2, width = 12, height = 15, dpi = 300)
+
+# ==========================================
+# 0. 패키지
+# ==========================================
+# 별도 설치 필요 없음 (base R로 가능)
+# final_stm_20_adj 모델이 이미 메모리에 있다고 가정
+
+# ==========================================
+# 1. 토픽 비중(theta) 추출
+# ==========================================
+theta_mat <- final_stm_20_adj$theta
+# theta_mat: 행 = 문서, 열 = 토픽
+
+# 토픽 수 확인
+K <- ncol(theta_mat)
+print(paste("토픽 수:", K))
+
+# ==========================================
+# 2. 토픽 간 상관행렬 계산
+# ==========================================
+topic_cor <- cor(theta_mat)
+
+# 상관계수를 거리로 변환
+# corr = 1 이면 거리 0, corr = -1 이면 거리 2
+topic_dist <- as.dist(1 - topic_cor)
+
+# ==========================================
+# 3. 계층적 군집화
+# ==========================================
+hc_topics <- hclust(topic_dist, method = "complete")
+# method는 "complete", "average", "ward.D2" 등 바꿔볼 수 있음
+# 논문/그림 느낌상 complete 또는 average를 많이 씀
+
+# ==========================================
+# 4. 2개 군집 / 4개 군집 cut 높이 계산
+# ==========================================
+get_cut_height <- function(hc, k){
+  n <- length(hc$order)
+  if(k < 2 || k > n){
+    stop("k는 2 이상, 토픽 수 이하만 가능합니다.")
+  }
+  # hclust$height는 병합 높이
+  # k개 군집으로 자를 때 기준 높이
+  sort(hc$height, decreasing = TRUE)[k - 1]
+}
+
+h2 <- get_cut_height(hc_topics, 2)
+h4 <- get_cut_height(hc_topics, 4)
+
+print(paste("2개 군집 cut height:", round(h2, 3)))
+print(paste("4개 군집 cut height:", round(h4, 3)))
+
+# ==========================================
+# 5. 화면에 덴드로그램 그리기
+# ==========================================
+plot(hc_topics,
+     main = "Cluster Dendrogram",
+     xlab = "",
+     sub = "",
+     ylab = "Height",
+     cex = 0.8)
+
+# 2개 군집 선 (빨강)
+abline(h = h2, col = "red", lwd = 2)
+
+# 4개 군집 선 (초록)
+abline(h = h4, col = "forestgreen", lwd = 2)
+
+# 오른쪽에 텍스트 표시
+usr <- par("usr")
+x_right <- usr[2]
+
+text(x = x_right, y = h2, labels = "2", col = "red", pos = 4, cex = 1.1, font = 2)
+text(x = x_right, y = h4, labels = "4", col = "forestgreen", pos = 4, cex = 1.1, font = 2)
+# ==========================================
+# 7. PDF 파일로 저장
+# ==========================================
+pdf("STM_topic_dendrogram.pdf", width = 10, height = 7)
+
+plot(hc_topics,
+     main = "Cluster Dendrogram",
+     xlab = "",
+     sub = "",
+     ylab = "Height",
+     cex = 0.8)
+
+abline(h = h2, col = "red", lwd = 2)
+abline(h = h4, col = "forestgreen", lwd = 2)
+
+usr <- par("usr")
+x_right <- usr[2]
+
+text(x = x_right, y = h2, labels = "2", col = "red", pos = 4, cex = 1.1, font = 2)
+text(x = x_right, y = h4, labels = "4", col = "forestgreen", pos = 4, cex = 1.1, font = 2)
+
+dev.off()
+
+print("✅ 저장 완료: STM_topic_dendrogram.pdf")
+# 최초 1회만 설치
+install.packages("remotes")  # 없으면 먼저 설치
+remotes::install_github("ricardo-bion/ggradar")
+install.packages("dplyr")
+install.packages("tidyr")
+install.packages("ggplot2")
+install.packages("ggradar")
+save.image("STM_full_workspace.RData")
+save(final_stm_20_adj, file = "STM_final_model.RData")
+save(out3, file = "STM_processed_data.RData")
+# 작업 폴더 먼저 맞추고
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# 전체 복구
+load("최종.RData")
+# ==========================================
+# 0. 패키지
+# ==========================================
+# 별도 설치 필요 없음
+# final_stm_20_adj 모델이 이미 메모리에 있다고 가정
+
+# ==========================================
+# 1. 토픽 비중(theta) 추출
+# ==========================================
+theta_mat <- final_stm_20_adj$theta
+K <- ncol(theta_mat)
+print(paste("토픽 수:", K))
+
+# ==========================================
+# 2. 토픽 간 상관행렬 계산
+# ==========================================
+topic_cor <- cor(theta_mat)
+topic_dist <- as.dist(1 - topic_cor)
+
+# ==========================================
+# 3. 계층적 군집화
+# ==========================================
+hc_topics <- hclust(topic_dist, method = "complete")
+
+# ==========================================
+# 4. k개 군집용 cut height 계산 함수
+# ==========================================
+get_cut_height <- function(hc, k){
+  n <- length(hc$order)
+  if(k < 2 || k > n){
+    stop("k는 2 이상, 토픽 수 이하만 가능합니다.")
+  }
+  sort(hc$height, decreasing = TRUE)[k - 1]
+}
+
+# 2개 군집 높이
+h2 <- get_cut_height(hc_topics, 2)
+
+# 5개 군집 높이
+h5 <- get_cut_height(hc_topics, 5)
+
+print(paste("2개 군집 cut height:", round(h2, 3)))
+print(paste("5개 군집 cut height:", round(h5, 3)))
+
+# ==========================================
+# 5. 화면에 덴드로그램 그리기
+# ==========================================
+plot(hc_topics,
+     main = "Cluster Dendrogram",
+     xlab = "",
+     sub = "",
+     ylab = "Height",
+     cex = 0.8)
+
+# 2개 군집 선 (빨강)
+abline(h = h2, col = "red", lwd = 2)
+
+# 5개 군집 선 (초록)
+abline(h = h5, col = "forestgreen", lwd = 2)
+
+# 오른쪽 라벨
+usr <- par("usr")
+x_right <- usr[2]
+
+text(x = x_right, y = h2, labels = "2", col = "red", pos = 4, cex = 1.1, font = 2)
+text(x = x_right, y = h5, labels = "5", col = "forestgreen", pos = 4, cex = 1.1, font = 2)
+
+# ==========================================
+# 6. PDF 파일로 저장
+# ==========================================
+pdf("STM_topic_dendrogram_2and5clusters.pdf", width = 10, height = 7)
+
+plot(hc_topics,
+     main = "Cluster Dendrogram",
+     xlab = "",
+     sub = "",
+     ylab = "Height",
+     cex = 0.8)
+
+abline(h = h2, col = "red", lwd = 2)
+abline(h = h5, col = "forestgreen", lwd = 2)
+
+usr <- par("usr")
+x_right <- usr[2]
+
+text(x = x_right, y = h2, labels = "2", col = "red", pos = 4, cex = 1.1, font = 2)
+text(x = x_right, y = h5, labels = "5", col = "forestgreen", pos = 4, cex = 1.1, font = 2)
+
+dev.off()
+
+print("✅ 저장 완료: STM_topic_dendrogram_2and5clusters.pdf")
+
+# ==========================================
+# 20개 토픽별 FREX 단어 15개 시각화
+# ==========================================
+
+# 필요한 라이브러리 로드
+library(tidyverse)
+library(stm)
+library(tidytext)
+
+# [1] 토픽별 상위 15개 FREX 단어 추출
+top_words_frex <- t(frex_words_20_adj[, 1:15])
+colnames(top_words_frex) <- paste0("Topic ", 1:20)
+
+# [2] Long format으로 변환
+frex_df <- as.data.frame(top_words_frex) %>%
+  mutate(rank = row_number()) %>%
+  pivot_longer(
+    cols = starts_with("Topic"),
+    names_to = "topic",
+    values_to = "word"
+  )
+
+# 확인
+head(frex_df)
+
+# [3] ggplot 시각화
+p2 <- ggplot(frex_df, aes(x = reorder(word, -rank), y = 1, label = word)) +
+  geom_text(size = 3.5, color = "darkblue", fontface = "bold") +
+  facet_wrap(
+    ~ factor(topic, levels = paste0("Topic ", 1:20)),
+    scales = "free",
+    ncol = 4
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Top 15 FREX Words per Topic",
+    subtitle = "IP5 FinTech Patents - Unique Topic Signatures",
+    x = NULL,
+    y = NULL
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "gray90", color = "white"),
+    strip.text = element_text(face = "bold")
+  )
+
+# [4] 그래프 출력
+print(p2)
+
+# [5] 파일 저장
+ggsave("TOPIC_FREX_WORDS_GRID_15.png", plot = p2, width = 12, height = 18, dpi = 300)
+
+
+# =========================================================
+# 기술 융합 생태계 매핑 (STM topic correlation network)
+# final_stm_20_adj + out3 기준
+# =========================================================
+
+# -------------------------------
+# 0. 패키지 설치 / 로드
+# -------------------------------
+# 최초 1회만 설치
+# install.packages("stm")
+# install.packages("igraph")
+# install.packages("RColorBrewer")
+
+library(stm)
+library(igraph)
+library(RColorBrewer)
+
+# -------------------------------
+# 1. 작업 폴더 지정
+# -------------------------------
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# -------------------------------
+# 2. 최종 모델 존재 확인
+# -------------------------------
+exists("final_stm_20_adj")
+exists("out3")
+
+# -------------------------------
+# 3. topicCorr 실행
+# -------------------------------
+topic_corr_obj <- topicCorr(final_stm_20_adj)
+
+# topicCorr 결과에서 토픽 간 상관행렬 추출
+# stm 버전에 따라 객체 구조가 조금 다를 수 있어서 안전하게 처리
+if (!is.null(topic_corr_obj$posadj)) {
+  corr_mat <- topic_corr_obj$posadj
+} else if (!is.null(topic_corr_obj$cor)) {
+  corr_mat <- topic_corr_obj$cor
+} else {
+  stop("topicCorr 결과에서 상관행렬을 찾을 수 없습니다. str(topic_corr_obj)로 구조를 확인하세요.")
+}
+
+# 행/열 이름이 없으면 Topic 번호 부여
+K <- ncol(final_stm_20_adj$theta)
+if (is.null(colnames(corr_mat))) {
+  colnames(corr_mat) <- paste0("T", 1:K)
+  rownames(corr_mat) <- paste0("T", 1:K)
+}
+
+# -------------------------------
+# 4. 임계치 설정
+# -------------------------------
+threshold <- 0.15
+
+# 양(+)의 상관 중 threshold 이상만 남김
+adj_mat <- corr_mat
+adj_mat[adj_mat < threshold] <- 0
+diag(adj_mat) <- 0
+
+# 혹시 음수 남아 있으면 제거
+adj_mat[adj_mat < 0] <- 0
+
+# -------------------------------
+# 5. 네트워크 생성
+# -------------------------------
+g <- graph_from_adjacency_matrix(
+  adjmatrix = adj_mat,
+  mode = "undirected",
+  weighted = TRUE,
+  diag = FALSE
+)
+vcount(g)
+ecount(g)
+
+# 고립 노드도 포함하려면 아래처럼 전체 토픽을 강제로 넣어줌
+all_topic_names <- paste0("T", 1:K)
+missing_nodes <- setdiff(all_topic_names, V(g)$name)
+if (length(missing_nodes) > 0) {
+  g <- add_vertices(g, nv = length(missing_nodes), name = missing_nodes)
+}
+
+# 토픽 순서 정렬
+g <- permute(
+  g,
+  match(all_topic_names, V(g)$name)
+)
+
+# -------------------------------
+# 6. 노드 크기 = 전체 토픽 비중(theta 평균)
+# -------------------------------
+theta_mat <- final_stm_20_adj$theta
+topic_prevalence <- colMeans(theta_mat, na.rm = TRUE)
+
+node_df <- data.frame(
+  topic = paste0("T", 1:K),
+  prevalence = topic_prevalence,
+  stringsAsFactors = FALSE
+)
+
+# prevalence를 보기 좋은 크기로 스케일링
+scale_size <- function(x, min_size = 12, max_size = 35) {
+  if (max(x) == min(x)) return(rep(mean(c(min_size, max_size)), length(x)))
+  min_size + (x - min(x)) * (max_size - min_size) / (max(x) - min(x))
+}
+
+node_df$node_size <- scale_size(node_df$prevalence, min_size = 12, max_size = 35)
+
+
+# -------------------------------
+# 7. 메가 클러스터 지정
+# -------------------------------
+mega_cluster_map <- c(
+  "Digital Assets",      # T1
+  "Payments",            # T2
+  "Insurance",           # T3
+  "Financial Ops",       # T4
+  "Banking",             # T5
+  "Payments",            # T6
+  "Security",            # T7
+  "Digital Assets",      # T8
+  "Investment",          # T9
+  "Payments",            # T10
+  "Financial Ops",       # T11
+  "Banking",             # T12
+  "Lending",             # T13
+  "Digital Assets",      # T14
+  "Payments",            # T15
+  "Commerce Platform",   # T16
+  "AI/Data",             # T17
+  "Infrastructure",      # T18
+  "Payments",            # T19
+  "Security"             # T20
+)
+
+if (length(mega_cluster_map) != K) {
+  stop("mega_cluster_map 길이가 토픽 수(K)와 다릅니다.")
+}
+
+node_df$mega_cluster <- mega_cluster_map
+
+# 색상 지정
+cluster_levels <- unique(node_df$mega_cluster)
+n_clusters <- length(cluster_levels)
+
+if (n_clusters <= 8) {
+  cluster_colors <- brewer.pal(max(3, n_clusters), "Set2")[1:n_clusters]
+} else if (n_clusters <= 12) {
+  cluster_colors <- brewer.pal(n_clusters, "Set3")
+} else {
+  cluster_colors <- rainbow(n_clusters)
+}
+
+names(cluster_colors) <- cluster_levels
+node_df$color <- cluster_colors[node_df$mega_cluster]
+# -------------------------------
+# 8. 중심성 계산
+# -------------------------------
+deg <- degree(g, mode = "all")
+bet <- betweenness(g, directed = FALSE, normalized = TRUE)
+eig <- eigen_centrality(g, directed = FALSE, weights = E(g)$weight)$vector
+
+node_df$degree <- deg[match(node_df$topic, names(deg))]
+node_df$betweenness <- bet[match(node_df$topic, names(bet))]
+node_df$eigenvector <- eig[match(node_df$topic, names(eig))]
+
+# -------------------------------
+# 9. 토픽 라벨 지정 (겹침 해결 버전)
+# -------------------------------
+
+# 긴 라벨 (논문/표용)
+topic_label_long <- c(
+  "Crypto Asset & Blockchain Exchange",        
+  "Card-Mobile POS Payment",                   
+  "Insurance Claim & Risk Assessment",         
+  "Billing, Invoice & Audit Automation",       
+  "Bank Account, Deposit & Remittance",        
+  "Digital Wallet & Virtual Currency Payment", 
+  "Authentication, Credential & Biometric Security",
+  "NFT Token Issuance & Ownership Rights",     
+  "Investment Recommendation & Portfolio Decision",
+  "Settlement, Receipt & Transaction Processing",
+  "Enterprise Financial Management & Monitoring",
+  "Asset Ledger, Transfer & Tracking",         
+  "Loan, Credit Risk & Repayment",             
+  "Blockchain Smart Contract & Privacy",       
+  "Financial Instrument & Real-time Settlement",
+  "E-commerce Order, Delivery & Platform Fee", 
+  "AI/ML Prediction & Anomaly Detection",      
+  "Device/Resource Configuration & Account Linking",
+  "Electric Charging & Real-time Transaction", 
+  "Face/Voice Recognition Login & Verification"
+)
+
+# 짧은 라벨 (그래프용)
+topic_label_short <- c(
+  "Crypto Exchange",
+  "Mobile POS Pay",
+  "Insurance Claim",
+  "Invoice Audit",
+  "Bank Remittance",
+  "Digital Wallet",
+  "Auth & Biometrics",
+  "NFT Rights",
+  "Investment Reco",
+  "Settlement Proc",
+  "Enterprise Finance",
+  "Asset Ledger",
+  "Credit Risk",
+  "Smart Contract",
+  "Realtime Settle",
+  "E-commerce Fee",
+  "AI Detection",
+  "Device Linking",
+  "Charging Txn",
+  "Face/Voice Login"
+)
+
+if (length(topic_label_long) != K) stop("topic_label_long 길이 오류")
+if (length(topic_label_short) != K) stop("topic_label_short 길이 오류")
+
+node_df$label_long  <- topic_label_long
+node_df$label_short <- topic_label_short
+
+# -------------------------------
+# igraph 속성 적용 (짧은 라벨 사용)
+# -------------------------------
+V(g)$size <- node_df$node_size[match(V(g)$name, node_df$topic)]
+V(g)$color <- node_df$color[match(V(g)$name, node_df$topic)]
+V(g)$label <- node_df$label_short[match(V(g)$name, node_df$topic)]
+
+V(g)$frame.color <- "gray30"
+V(g)$label.color <- "black"
+V(g)$label.cex <- 0.75
+V(g)$label.family <- "sans"
+
+# edge width
+if (ecount(g) > 0) {
+  edge_weights <- E(g)$weight
+  edge_width_scaled <- 1 + 8 * (edge_weights - min(edge_weights)) /
+    (max(edge_weights) - min(edge_weights) + 1e-8)
+  E(g)$width <- edge_width_scaled
+  E(g)$color <- adjustcolor("gray40", alpha.f = 0.45)
+}
+
+# -------------------------------
+# 10. 레이아웃 (간격 확장)
+# -------------------------------
+set.seed(2026)
+lay <- layout_with_fr(g)
+
+# 간격 넓히기
+lay[,1] <- lay[,1] * 1.35
+lay[,2] <- lay[,2] * 1.35
+
+# -------------------------------
+# 11. 화면 출력
+# -------------------------------
+par(mar = c(1, 1, 3, 1))
+plot(
+  g,
+  layout = lay,
+  main = "Technology Convergence Ecosystem Map"
+)
+
+legend(
+  "topleft",
+  legend = names(cluster_colors),
+  pt.bg = cluster_colors,
+  pch = 21,
+  pt.cex = 1.6,
+  bty = "n",
+  cex = 0.85,
+  title = "Mega Cluster"
+)
+
+# -------------------------------
+# 12. PNG 저장 (크게)
+# -------------------------------
+png(
+  filename = "STM_Topic_Ecosystem_Network_clean.png",
+  width = 2600,
+  height = 1900,
+  res = 260
+)
+
+par(mar = c(1, 1, 3, 1))
+plot(
+  g,
+  layout = lay,
+  main = "Technology Convergence Ecosystem Map"
+)
+
+legend(
+  "topleft",
+  legend = names(cluster_colors),
+  pt.bg = cluster_colors,
+  pch = 21,
+  pt.cex = 1.8,
+  bty = "n",
+  cex = 0.9,
+  title = "Mega Cluster"
+)
+
+dev.off()
+
+print("✅ PNG 저장 완료")
+
+# -------------------------------
+# 13. PDF 저장
+# -------------------------------
+pdf(
+  file = "STM_Topic_Ecosystem_Network_clean.pdf",
+  width = 16,
+  height = 12
+)
+
+par(mar = c(1, 1, 3, 1))
+plot(
+  g,
+  layout = lay,
+  main = "Technology Convergence Ecosystem Map"
+)
+
+legend(
+  "topleft",
+  legend = names(cluster_colors),
+  pt.bg = cluster_colors,
+  pch = 21,
+  pt.cex = 1.8,
+  bty = "n",
+  cex = 0.9,
+  title = "Mega Cluster"
+)
+
+dev.off()
+
+print("✅ PDF 저장 완료")
+
+# -------------------------------
+# 14. 라벨 테이블 저장 (논문용)
+# -------------------------------
+label_table <- data.frame(
+  topic = paste0("T", 1:K),
+  label_short = topic_label_short,
+  label_long = topic_label_long,
+  mega_cluster = mega_cluster_map,
+  stringsAsFactors = FALSE
+)
+
+write.csv(label_table, "STM_Topic_Label_Table.csv", row.names = FALSE)
+
+print("✅ 라벨 테이블 저장 완료")
+
+# -------------------------------
+# 15. 중심성 출력
+# -------------------------------
+node_out <- node_df[order(-node_df$betweenness), ]
+
+print(node_out[order(-node_out$betweenness),
+               c("topic","label_long","mega_cluster","betweenness")][1:10, ])
+
+# -------------------------------
+# 16. 해석 문장 자동 생성
+# -------------------------------
+top_bet_topic <- node_out$topic[which.max(node_out$betweenness)]
+top_bet_label <- node_out$label_long[which.max(node_out$betweenness)]
+top_bet_cluster <- node_out$mega_cluster[which.max(node_out$betweenness)]
+
+cat("\n=============================\n")
+cat("해석 결과\n")
+cat("=============================\n")
+
+cat(
+  paste0(
+    "가장 높은 매개 중심성을 가지는 토픽은 ",
+    top_bet_label,
+    " (", top_bet_topic, ")이며, 이는 ",
+    top_bet_cluster,
+    " 영역에서 생태계 허브 역할을 수행한다.\n"
+  )
+)
+
+# -------------------------------
+# 17. 전체 저장
+# -------------------------------
+save(
+  topic_corr_obj, corr_mat, adj_mat, g, lay, node_df,
+  file = "STM_Topic_Ecosystem_Objects.RData"
+)
+
+print("✅ 전체 저장 완료")
+
+# ==========================================
+# 시계열 동향 분석 및 시각화 코드
+# ==========================================
+# =========================================================
+# 외생변수 활용(사후분석) : 시계열 동향 분석 전체 코드
+# 기준 객체:
+#   - final_stm_20_adj
+#   - out3
+#   - mega_cluster_map
+#   - Publication.Year
+# 목적:
+#   1) estimateEffect 기반 연도 효과 추정
+#   2) 메가 클러스터 연도별 히트맵
+#   3) 핵심 토픽(생성형 AI, 오픈뱅킹 API) 95% CI 선그래프
+#   4) 결과물 CSV / PNG / PDF 저장
+# =========================================================
+
+# ---------------------------------------------------------
+# 0. 패키지 로드
+# ---------------------------------------------------------
+library(stm)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(gridExtra)
+
+# ---------------------------------------------------------
+# 1. 작업 폴더 설정
+# ---------------------------------------------------------
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# ---------------------------------------------------------
+# 2. 객체 존재 확인
+# ---------------------------------------------------------
+if (!exists("final_stm_20_adj")) stop("final_stm_20_adj 객체가 없습니다.")
+if (!exists("out3")) stop("out3 객체가 없습니다.")
+if (!exists("mega_cluster_map")) stop("mega_cluster_map 객체가 없습니다.")
+
+# ---------------------------------------------------------
+# 3. 기본 정보 확인
+# ---------------------------------------------------------
+K <- ncol(final_stm_20_adj$theta)
+if (K != 20) {
+  warning(paste("현재 모델의 토픽 수는", K, "개입니다. 아래 코드는 K=20 기준으로 작성되었습니다."))
+}
+
+if (length(mega_cluster_map) != K) {
+  stop("mega_cluster_map 길이와 토픽 수(K)가 일치하지 않습니다.")
+}
+
+if (!"Publication.Year" %in% colnames(out3$meta)) {
+  stop("out3$meta 안에 Publication.Year 변수가 없습니다.")
+}
+
+if (!"Origin_Country" %in% colnames(out3$meta)) {
+  warning("out3$meta 안에 Origin_Country가 없습니다. estimateEffect에서 제외합니다.")
+}
+
+if (!"C_adj_i" %in% colnames(out3$meta)) {
+  warning("out3$meta 안에 C_adj_i가 없습니다. estimateEffect에서 제외합니다.")
+}
+
+# ---------------------------------------------------------
+# 4. 토픽명/메가클러스터용 테이블 정리
+# ---------------------------------------------------------
+topic_info <- data.frame(
+  topic_num = 1:K,
+  topic_id = paste0("T", 1:K),
+  mega_cluster = mega_cluster_map,
+  stringsAsFactors = FALSE
+)
+
+# ---------------------------------------------------------
+# 5. estimateEffect 적합
+#    - 최종 STM 모델에서 time effect만 시각화할 것이므로
+#      통제변수도 함께 넣어 부분효과 형태로 추정
+# ---------------------------------------------------------
+if ("Origin_Country" %in% colnames(out3$meta) && "C_adj_i" %in% colnames(out3$meta)) {
+  
+  effect_time <- estimateEffect(
+    1:K ~ s(Publication.Year) + Origin_Country + C_adj_i,
+    stmobj = final_stm_20_adj,
+    metadata = out3$meta,
+    uncertainty = "Global"
+  )
+  
+} else if ("Origin_Country" %in% colnames(out3$meta) && !"C_adj_i" %in% colnames(out3$meta)) {
+  
+  effect_time <- estimateEffect(
+    1:K ~ s(Publication.Year) + Origin_Country,
+    stmobj = final_stm_20_adj,
+    metadata = out3$meta,
+    uncertainty = "Global"
+  )
+  
+} else if (!"Origin_Country" %in% colnames(out3$meta) && "C_adj_i" %in% colnames(out3$meta)) {
+  
+  effect_time <- estimateEffect(
+    1:K ~ s(Publication.Year) + C_adj_i,
+    stmobj = final_stm_20_adj,
+    metadata = out3$meta,
+    uncertainty = "Global"
+  )
+  
+} else {
+  
+  effect_time <- estimateEffect(
+    1:K ~ s(Publication.Year),
+    stmobj = final_stm_20_adj,
+    metadata = out3$meta,
+    uncertainty = "Global"
+  )
+}
+
+save(effect_time, file = "STM_estimateEffect_time.RData")
+print("✅ estimateEffect 저장 완료: STM_estimateEffect_time.RData")
+
+# ---------------------------------------------------------
+# 6. 연도 범위 생성
+# ---------------------------------------------------------
+year_seq <- seq(
+  min(out3$meta$Publication.Year, na.rm = TRUE),
+  max(out3$meta$Publication.Year, na.rm = TRUE),
+  by = 1
+)
+
+# ---------------------------------------------------------
+# 7. 연도별 토픽 평균 비중(theta 기반 기술통계)
+#    - heatmap용 기초 데이터
+# ---------------------------------------------------------
+theta_df <- as.data.frame(final_stm_20_adj$theta)
+colnames(theta_df) <- paste0("T", 1:K)
+theta_df$Publication.Year <- out3$meta$Publication.Year
+
+theta_long <- theta_df %>%
+  pivot_longer(
+    cols = starts_with("T"),
+    names_to = "topic_id",
+    values_to = "topic_prop"
+  )
+
+topic_year_mean <- theta_long %>%
+  group_by(Publication.Year, topic_id) %>%
+  summarise(mean_prop = mean(topic_prop, na.rm = TRUE), .groups = "drop") %>%
+  left_join(topic_info, by = "topic_id")
+
+write.csv(topic_year_mean, "Topic_Year_Mean_Theta.csv", row.names = FALSE)
+print("✅ 저장 완료: Topic_Year_Mean_Theta.csv")
+
+# ---------------------------------------------------------
+# 8. 메가 클러스터 연도별 평균 비중 계산
+#    - topic-level mean_prop를 같은 mega_cluster 내에서 합산
+# ---------------------------------------------------------
+cluster_year_df <- topic_year_mean %>%
+  group_by(Publication.Year, mega_cluster) %>%
+  summarise(cluster_prop = sum(mean_prop, na.rm = TRUE), .groups = "drop")
+
+# 보기 좋게 클러스터 순서 고정
+cluster_order <- unique(mega_cluster_map)
+cluster_year_df$mega_cluster <- factor(cluster_year_df$mega_cluster, levels = cluster_order)
+
+write.csv(cluster_year_df, "MegaCluster_Year_Heatmap_Data.csv", row.names = FALSE)
+print("✅ 저장 완료: MegaCluster_Year_Heatmap_Data.csv")
+
+# ---------------------------------------------------------
+# 9. 메가 클러스터 연도별 히트맵
+# ---------------------------------------------------------
+p_heatmap <- ggplot(cluster_year_df, aes(x = Publication.Year, y = mega_cluster, fill = cluster_prop)) +
+  geom_tile(color = "white", linewidth = 0.25) +
+  scale_x_continuous(breaks = year_seq) +
+  scale_fill_gradient(low = "gray95", high = "steelblue", labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Yearly Heatmap of Mega-Cluster Topic Proportions",
+    subtitle = "Aggregated from document-topic proportions by Publication Year",
+    x = "Publication Year",
+    y = "Mega Cluster",
+    fill = "Proportion"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(face = "bold"),
+    panel.grid = element_blank()
+  )
+
+print(p_heatmap)
+
+ggsave("MegaCluster_Year_Heatmap.png", plot = p_heatmap, width = 11, height = 6.5, dpi = 300)
+ggsave("MegaCluster_Year_Heatmap.pdf", plot = p_heatmap, width = 11, height = 6.5)
+print("✅ 저장 완료: MegaCluster_Year_Heatmap.png / pdf")
+
+# ---------------------------------------------------------
+# 10. 핵심 토픽 번호 지정
+# ---------------------------------------------------------
+# ---------------------------------------------------------
+# 10. 핵심 토픽 번호 지정
+# ---------------------------------------------------------
+ai_topic <- 17
+openapi_topic <- 5
+
+if (is.na(ai_topic) || is.na(openapi_topic)) {
+  message("⚠️ ai_topic / openapi_topic 번호를 직접 입력해야 합니다. 아래 그래프 저장 코드는 일단 실행 보류됩니다.")
+}
+
+# ---------------------------------------------------------
+# 11. estimateEffect 기반 토픽별 시계열 선그래프 저장 함수
+#     - stm::plot.estimateEffect를 직접 파일로 저장
+#     - 95% CI 포함
+# ---------------------------------------------------------
+save_topic_ci_plot <- function(effect_obj, topic_num, topic_name, years, file_stub) {
+  
+  png(
+    filename = paste0(file_stub, ".png"),
+    width = 1400,
+    height = 900,
+    res = 180
+  )
+  
+  plot(
+    effect_obj,
+    covariate = "Publication.Year",
+    topics = topic_num,
+    model = final_stm_20_adj,
+    method = "continuous",
+    xlab = "Publication Year",
+    ylab = "Expected Topic Proportion",
+    main = paste0(topic_name, " (T", topic_num, ")"),
+    printlegend = FALSE,
+    xaxt = "n",
+    linecol = "navy",
+    ci.level = 0.95
+  )
+  axis(1, at = years, labels = years)
+  dev.off()
+  
+  pdf(
+    file = paste0(file_stub, ".pdf"),
+    width = 10,
+    height = 6
+  )
+  plot(
+    effect_obj,
+    covariate = "Publication.Year",
+    topics = topic_num,
+    model = final_stm_20_adj,
+    method = "continuous",
+    xlab = "Publication Year",
+    ylab = "Expected Topic Proportion",
+    main = paste0(topic_name, " (T", topic_num, ")"),
+    printlegend = FALSE,
+    xaxt = "n",
+    linecol = "navy",
+    ci.level = 0.95
+  )
+  axis(1, at = years, labels = years)
+  dev.off()
+  
+  print(paste("✅ 저장 완료:", paste0(file_stub, ".png / .pdf")))
+}
+
+# ---------------------------------------------------------
+# 12. 핵심 토픽 2개 개별 95% CI 선그래프 저장
+# ---------------------------------------------------------
+if (!is.na(ai_topic)) {
+  save_topic_ci_plot(
+    effect_obj = effect_time,
+    topic_num = ai_topic,
+    topic_name = "Generative AI Topic",
+    years = year_seq,
+    file_stub = "Topic_Trend_GenerativeAI_95CI"
+  )
+}
+
+if (!is.na(openapi_topic)) {
+  save_topic_ci_plot(
+    effect_obj = effect_time,
+    topic_num = openapi_topic,
+    topic_name = "Open Banking API Topic",
+    years = year_seq,
+    file_stub = "Topic_Trend_OpenBankingAPI_95CI"
+  )
+}
+
+# ---------------------------------------------------------
+# 13. 두 핵심 토픽을 한 화면에 나란히 저장
+#     - base plotting을 한 파일 안에 2개 panel로 배치
+# ---------------------------------------------------------
+if (!is.na(ai_topic) && !is.na(openapi_topic)) {
+  
+  png("CoreTopics_Trend_2Panel_95CI.png", width = 1800, height = 800, res = 180)
+  par(mfrow = c(1, 2), mar = c(5, 4, 4, 2))
+  
+  plot(
+    effect_time,
+    covariate = "Publication.Year",
+    topics = ai_topic,
+    model = final_stm_20_adj,
+    method = "continuous",
+    xlab = "Publication Year",
+    ylab = "Expected Topic Proportion",
+    main = paste0("Generative AI Topic (T", ai_topic, ")"),
+    printlegend = FALSE,
+    xaxt = "n",
+    linecol = "navy",
+    ci.level = 0.95
+  )
+  axis(1, at = year_seq, labels = year_seq)
+  
+  plot(
+    effect_time,
+    covariate = "Publication.Year",
+    topics = openapi_topic,
+    model = final_stm_20_adj,
+    method = "continuous",
+    xlab = "Publication Year",
+    ylab = "Expected Topic Proportion",
+    main = paste0("Open Banking API Topic (T", openapi_topic, ")"),
+    printlegend = FALSE,
+    xaxt = "n",
+    linecol = "darkred",
+    ci.level = 0.95
+  )
+  axis(1, at = year_seq, labels = year_seq)
+  
+  dev.off()
+  
+  pdf("CoreTopics_Trend_2Panel_95CI.pdf", width = 14, height = 6)
+  par(mfrow = c(1, 2), mar = c(5, 4, 4, 2))
+  
+  plot(
+    effect_time,
+    covariate = "Publication.Year",
+    topics = ai_topic,
+    model = final_stm_20_adj,
+    method = "continuous",
+    xlab = "Publication Year",
+    ylab = "Expected Topic Proportion",
+    main = paste0("Generative AI Topic (T", ai_topic, ")"),
+    printlegend = FALSE,
+    xaxt = "n",
+    linecol = "navy",
+    ci.level = 0.95
+  )
+  axis(1, at = year_seq, labels = year_seq)
+  
+  plot(
+    effect_time,
+    covariate = "Publication.Year",
+    topics = openapi_topic,
+    model = final_stm_20_adj,
+    method = "continuous",
+    xlab = "Publication Year",
+    ylab = "Expected Topic Proportion",
+    main = paste0("Open Banking API Topic (T", openapi_topic, ")"),
+    printlegend = FALSE,
+    xaxt = "n",
+    linecol = "darkred",
+    ci.level = 0.95
+  )
+  axis(1, at = year_seq, labels = year_seq)
+  
+  dev.off()
+  
+  print("✅ 저장 완료: CoreTopics_Trend_2Panel_95CI.png / pdf")
+}
+
+# ---------------------------------------------------------
+# 14. 연도별 상위 토픽 변화 표 저장
+#     - 각 연도마다 평균 비중 상위 5개 토픽
+# ---------------------------------------------------------
+top5_topic_each_year <- topic_year_mean %>%
+  group_by(Publication.Year) %>%
+  arrange(Publication.Year, desc(mean_prop)) %>%
+  slice_head(n = 5) %>%
+  ungroup()
+
+write.csv(top5_topic_each_year, "Top5_Topics_By_Year.csv", row.names = FALSE)
+print("✅ 저장 완료: Top5_Topics_By_Year.csv")
+
+# ---------------------------------------------------------
+# 15. AI / Open API 토픽의 연도별 실제 평균 비중(theta 기술통계) 저장
+#     - estimateEffect 그림과 별도로 서술용 보조표
+# ---------------------------------------------------------
+if (!is.na(ai_topic) || !is.na(openapi_topic)) {
+  
+  selected_topics <- c(ai_topic, openapi_topic)
+  selected_topics <- selected_topics[!is.na(selected_topics)]
+  
+  selected_topic_df <- topic_year_mean %>%
+    filter(topic_num %in% selected_topics) %>%
+    mutate(topic_label = case_when(
+      topic_num == ai_topic ~ "Generative AI",
+      topic_num == openapi_topic ~ "Open Banking API",
+      TRUE ~ paste0("Topic ", topic_num)
+    ))
+  
+  write.csv(selected_topic_df, "CoreTopics_Yearly_MeanTheta.csv", row.names = FALSE)
+  print("✅ 저장 완료: CoreTopics_Yearly_MeanTheta.csv")
+}
+
+# ---------------------------------------------------------
+# 16. 전체 워크스페이스 저장
+# ---------------------------------------------------------
+save.image("STM_TimeSeries_PostAnalysis_Workspace.RData")
+print("✅ 전체 저장 완료: STM_TimeSeries_PostAnalysis_Workspace.RData")
+
+# ---------------------------------------------------------
+# 17. 실행 완료 메시지
+# ---------------------------------------------------------
+cat("\n====================================================\n")
+cat("외생변수 활용(사후분석) 시계열 동향 분석 완료\n")
+cat("생성 파일 목록:\n")
+cat("- STM_estimateEffect_time.RData\n")
+cat("- Topic_Year_Mean_Theta.csv\n")
+cat("- MegaCluster_Year_Heatmap_Data.csv\n")
+cat("- MegaCluster_Year_Heatmap.png / pdf\n")
+cat("- Top5_Topics_By_Year.csv\n")
+cat("- (ai_topic / openapi_topic 입력 시) 핵심 토픽 95% CI 그래프들\n")
+cat("- STM_TimeSeries_PostAnalysis_Workspace.RData\n")
+cat("====================================================\n")
+
+# =========================================================
+# 외생변수 활용(사후분석) : 20개 토픽 시계열 동향 분석 전체 코드
+# [포함 내용]
+# 1) estimateEffect 기반 연도 효과 추정
+# 2) 20개 토픽 전체 연도별 히트맵
+# 3) 20개 토픽 전체 연도별 선그래프(Facet)
+# 4) 핵심 토픽(생성형 AI 17번, 오픈뱅킹 API 5번) 95% CI 그래프
+# 5) 20개 토픽 개별 estimateEffect 그래프 자동 저장
+# 6) 연도별 상위 토픽 표 저장
+# =========================================================
+
+# ---------------------------------------------------------
+# 0. 패키지 로드
+# ---------------------------------------------------------
+library(stm)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(stringr)
+
+# ---------------------------------------------------------
+# 1. 작업 폴더 설정
+# ---------------------------------------------------------
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# ---------------------------------------------------------
+# 2. 객체 존재 확인
+# ---------------------------------------------------------
+if (!exists("final_stm_20_adj")) stop("final_stm_20_adj 객체가 없습니다.")
+if (!exists("out3")) stop("out3 객체가 없습니다.")
+
+# ---------------------------------------------------------
+# 3. 기본 정보 확인
+# ---------------------------------------------------------
+K <- ncol(final_stm_20_adj$theta)
+
+if (K != 20) {
+  warning(paste("현재 모델의 토픽 수는", K, "개입니다. 이 코드는 K=20 기준입니다."))
+}
+
+if (!"Publication.Year" %in% colnames(out3$meta)) {
+  stop("out3$meta 안에 Publication.Year 변수가 없습니다.")
+}
+
+# ---------------------------------------------------------
+# 4. 핵심 토픽 번호 지정
+# ---------------------------------------------------------
+ai_topic <- 17
+openapi_topic <- 5
+target_topics <- c(17, 5)
+
+# ---------------------------------------------------------
+# 5. 토픽 정보 테이블
+# ---------------------------------------------------------
+topic_info <- data.frame(
+  topic_num = 1:K,
+  topic_id = paste0("T", 1:K),
+  stringsAsFactors = FALSE
+)
+
+# 짧은 라벨
+topic_label_short <- c(
+  "Crypto Exchange",
+  "Mobile POS Pay",
+  "Insurance Claim",
+  "Invoice Audit",
+  "Bank Remittance",
+  "Digital Wallet",
+  "Auth & Biometrics",
+  "NFT Rights",
+  "Investment Reco",
+  "Settlement Proc",
+  "Enterprise Finance",
+  "Asset Ledger",
+  "Credit Risk",
+  "Smart Contract",
+  "Realtime Settle",
+  "E-commerce Fee",
+  "AI Detection",
+  "Device Linking",
+  "Charging Txn",
+  "Face/Voice Login"
+)
+
+# 긴 라벨
+topic_label_long <- c(
+  "Crypto Asset & Blockchain Exchange",
+  "Card-Mobile POS Payment",
+  "Insurance Claim & Risk Assessment",
+  "Billing, Invoice & Audit Automation",
+  "Bank Account, Deposit & Remittance",
+  "Digital Wallet & Virtual Currency Payment",
+  "Authentication, Credential & Biometric Security",
+  "NFT Token Issuance & Ownership Rights",
+  "Investment Recommendation & Portfolio Decision",
+  "Settlement, Receipt & Transaction Processing",
+  "Enterprise Financial Management & Monitoring",
+  "Asset Ledger, Transfer & Tracking",
+  "Loan, Credit Risk & Repayment",
+  "Blockchain Smart Contract & Privacy",
+  "Financial Instrument & Real-time Settlement",
+  "E-commerce Order, Delivery & Platform Fee",
+  "AI/ML Prediction & Anomaly Detection",
+  "Device/Resource Configuration & Account Linking",
+  "Electric Charging & Real-time Transaction",
+  "Face/Voice Recognition Login & Verification"
+)
+
+if (length(topic_label_short) != K) stop("topic_label_short 길이 오류")
+if (length(topic_label_long) != K) stop("topic_label_long 길이 오류")
+
+topic_info$label_short <- topic_label_short
+topic_info$label_long  <- topic_label_long
+
+# ---------------------------------------------------------
+# 6. estimateEffect 적합
+#     - 현재 메타데이터에 존재하는 변수만 반영
+# ---------------------------------------------------------
+has_origin <- "Origin_Country" %in% colnames(out3$meta)
+has_cadj   <- "C_adj_i" %in% colnames(out3$meta)
+
+if (has_origin && has_cadj) {
+  effect_time <- estimateEffect(
+    1:K ~ s(Publication.Year) + Origin_Country + C_adj_i,
+    stmobj = final_stm_20_adj,
+    metadata = out3$meta,
+    uncertainty = "Global"
+  )
+} else if (has_origin && !has_cadj) {
+  effect_time <- estimateEffect(
+    1:K ~ s(Publication.Year) + Origin_Country,
+    stmobj = final_stm_20_adj,
+    metadata = out3$meta,
+    uncertainty = "Global"
+  )
+} else if (!has_origin && has_cadj) {
+  effect_time <- estimateEffect(
+    1:K ~ s(Publication.Year) + C_adj_i,
+    stmobj = final_stm_20_adj,
+    metadata = out3$meta,
+    uncertainty = "Global"
+  )
+} else {
+  effect_time <- estimateEffect(
+    1:K ~ s(Publication.Year),
+    stmobj = final_stm_20_adj,
+    metadata = out3$meta,
+    uncertainty = "Global"
+  )
+}
+
+save(effect_time, file = "STM_estimateEffect_time.RData")
+print("✅ 저장 완료: STM_estimateEffect_time.RData")
+
+# ---------------------------------------------------------
+# 7. 연도 범위
+# ---------------------------------------------------------
+year_seq <- seq(
+  min(out3$meta$Publication.Year, na.rm = TRUE),
+  max(out3$meta$Publication.Year, na.rm = TRUE),
+  by = 1
+)
+
+# ---------------------------------------------------------
+# 8. theta 기반 연도별 토픽 평균 비중 계산
+# ---------------------------------------------------------
+theta_df <- as.data.frame(final_stm_20_adj$theta)
+colnames(theta_df) <- paste0("T", 1:K)
+theta_df$Publication.Year <- out3$meta$Publication.Year
+
+theta_long <- theta_df %>%
+  pivot_longer(
+    cols = starts_with("T"),
+    names_to = "topic_id",
+    values_to = "topic_prop"
+  )
+
+topic_year_mean <- theta_long %>%
+  group_by(Publication.Year, topic_id) %>%
+  summarise(mean_prop = mean(topic_prop, na.rm = TRUE), .groups = "drop") %>%
+  left_join(topic_info, by = "topic_id")
+
+write.csv(topic_year_mean, "Topic_Year_Mean_Theta.csv", row.names = FALSE)
+print("✅ 저장 완료: Topic_Year_Mean_Theta.csv")
+
+# ---------------------------------------------------------
+# 9. 20개 토픽 전체 연도별 히트맵
+# ---------------------------------------------------------
+topic_year_mean$topic_facet <- factor(
+  paste0(topic_year_mean$topic_id, ": ", topic_year_mean$label_short),
+  levels = paste0("T", 1:K, ": ", topic_label_short)
+)
+
+p_heatmap_topics <- ggplot(topic_year_mean, aes(x = Publication.Year, y = topic_facet, fill = mean_prop)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_x_continuous(breaks = year_seq) +
+  scale_fill_gradient(low = "gray95", high = "firebrick", labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Yearly Heatmap of 20 Topic Proportions",
+    subtitle = "Mean topic proportion by publication year",
+    x = "Publication Year",
+    y = "Topics",
+    fill = "Proportion"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(face = "bold"),
+    panel.grid = element_blank()
+  )
+
+print(p_heatmap_topics)
+
+ggsave("All20Topics_Year_Heatmap.png", plot = p_heatmap_topics, width = 12, height = 8.5, dpi = 300)
+ggsave("All20Topics_Year_Heatmap.pdf", plot = p_heatmap_topics, width = 12, height = 8.5)
+print("✅ 저장 완료: All20Topics_Year_Heatmap.png / pdf")
+
+# ---------------------------------------------------------
+# 10. 20개 토픽 전체 연도별 선그래프 (theta 기반)
+#     - facet으로 20개 한 번에 보기
+# ---------------------------------------------------------
+p_line_alltopics <- ggplot(
+  topic_year_mean,
+  aes(x = Publication.Year, y = mean_prop, group = topic_id)
+) +
+  geom_line(linewidth = 0.8, color = "navy") +
+  geom_point(size = 1.4, color = "navy") +
+  facet_wrap(
+    ~ factor(topic_facet, levels = paste0("T", 1:K, ": ", topic_label_short)),
+    scales = "free_y",
+    ncol = 4
+  ) +
+  scale_x_continuous(breaks = year_seq) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Temporal Trends of All 20 Topics",
+    subtitle = "Mean topic proportion by publication year",
+    x = "Publication Year",
+    y = "Mean Topic Proportion"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    strip.text = element_text(face = "bold", size = 9),
+    plot.title = element_text(face = "bold")
+  )
+
+print(p_line_alltopics)
+
+ggsave("All20Topics_Year_Lineplot_Facet.png", plot = p_line_alltopics, width = 15, height = 12, dpi = 300)
+ggsave("All20Topics_Year_Lineplot_Facet.pdf", plot = p_line_alltopics, width = 15, height = 12)
+print("✅ 저장 완료: All20Topics_Year_Lineplot_Facet.png / pdf")
+
+# ---------------------------------------------------------
+# 11. 20개 토픽 전체 연도별 표 저장
+# ---------------------------------------------------------
+write.csv(topic_year_mean, "All20Topics_Yearly_Trends_Table.csv", row.names = FALSE)
+print("✅ 저장 완료: All20Topics_Yearly_Trends_Table.csv")
+
+# ---------------------------------------------------------
+# 12. 연도별 상위 5개 토픽 표 저장
+# ---------------------------------------------------------
+top5_topic_each_year <- topic_year_mean %>%
+  group_by(Publication.Year) %>%
+  arrange(Publication.Year, desc(mean_prop)) %>%
+  slice_head(n = 5) %>%
+  ungroup()
+
+write.csv(top5_topic_each_year, "Top5_Topics_By_Year.csv", row.names = FALSE)
+print("✅ 저장 완료: Top5_Topics_By_Year.csv")
+
+# ---------------------------------------------------------
+# 13. 핵심 토픽 2개(17, 5) 연도별 실제 평균 비중(theta) 저장
+# ---------------------------------------------------------
+selected_topic_df <- topic_year_mean %>%
+  filter(topic_num %in% target_topics) %>%
+  mutate(topic_label = case_when(
+    topic_num == ai_topic ~ "Generative AI",
+    topic_num == openapi_topic ~ "Open Banking API",
+    TRUE ~ paste0("Topic ", topic_num)
+  ))
+
+write.csv(selected_topic_df, "CoreTopics_Yearly_MeanTheta.csv", row.names = FALSE)
+print("✅ 저장 완료: CoreTopics_Yearly_MeanTheta.csv")
+
+# ---------------------------------------------------------
+# 14. estimateEffect 기반 개별 95% CI 그래프 저장 함수
+# ---------------------------------------------------------
+save_topic_ci_plot <- function(effect_obj, topic_num, topic_name, years, file_stub, line_color = "navy") {
+  
+  png(
+    filename = paste0(file_stub, ".png"),
+    width = 1400,
+    height = 900,
+    res = 180
+  )
+  
+  plot(
+    effect_obj,
+    covariate = "Publication.Year",
+    topics = topic_num,
+    model = final_stm_20_adj,
+    method = "continuous",
+    xlab = "Publication Year",
+    ylab = "Expected Topic Proportion",
+    main = paste0(topic_name, " (T", topic_num, ")"),
+    printlegend = FALSE,
+    xaxt = "n",
+    linecol = line_color,
+    ci.level = 0.95
+  )
+  axis(1, at = years, labels = years)
+  dev.off()
+  
+  pdf(
+    file = paste0(file_stub, ".pdf"),
+    width = 10,
+    height = 6
+  )
+  
+  plot(
+    effect_obj,
+    covariate = "Publication.Year",
+    topics = topic_num,
+    model = final_stm_20_adj,
+    method = "continuous",
+    xlab = "Publication Year",
+    ylab = "Expected Topic Proportion",
+    main = paste0(topic_name, " (T", topic_num, ")"),
+    printlegend = FALSE,
+    xaxt = "n",
+    linecol = line_color,
+    ci.level = 0.95
+  )
+  axis(1, at = years, labels = years)
+  dev.off()
+  
+  print(paste("✅ 저장 완료:", paste0(file_stub, ".png / .pdf")))
+}
+
+# ---------------------------------------------------------
+# 15. 핵심 토픽 개별 95% CI 그래프
+# ---------------------------------------------------------
+save_topic_ci_plot(
+  effect_obj = effect_time,
+  topic_num = ai_topic,
+  topic_name = "Generative AI Topic",
+  years = year_seq,
+  file_stub = "Topic_Trend_GenerativeAI_95CI",
+  line_color = "navy"
+)
+
+save_topic_ci_plot(
+  effect_obj = effect_time,
+  topic_num = openapi_topic,
+  topic_name = "Open Banking API Topic",
+  years = year_seq,
+  file_stub = "Topic_Trend_OpenBankingAPI_95CI",
+  line_color = "darkred"
+)
+
+# ---------------------------------------------------------
+# 16. 핵심 토픽 2개 나란히 95% CI 그래프
+# ---------------------------------------------------------
+png("CoreTopics_Trend_2Panel_95CI.png", width = 1800, height = 800, res = 180)
+par(mfrow = c(1, 2), mar = c(5, 4, 4, 2))
+
+plot(
+  effect_time,
+  covariate = "Publication.Year",
+  topics = ai_topic,
+  model = final_stm_20_adj,
+  method = "continuous",
+  xlab = "Publication Year",
+  ylab = "Expected Topic Proportion",
+  main = paste0("Generative AI Topic (T", ai_topic, ")"),
+  printlegend = FALSE,
+  xaxt = "n",
+  linecol = "navy",
+  ci.level = 0.95
+)
+axis(1, at = year_seq, labels = year_seq)
+
+plot(
+  effect_time,
+  covariate = "Publication.Year",
+  topics = openapi_topic,
+  model = final_stm_20_adj,
+  method = "continuous",
+  xlab = "Publication Year",
+  ylab = "Expected Topic Proportion",
+  main = paste0("Open Banking API Topic (T", openapi_topic, ")"),
+  printlegend = FALSE,
+  xaxt = "n",
+  linecol = "darkred",
+  ci.level = 0.95
+)
+axis(1, at = year_seq, labels = year_seq)
+
+dev.off()
+
+pdf("CoreTopics_Trend_2Panel_95CI.pdf", width = 14, height = 6)
+par(mfrow = c(1, 2), mar = c(5, 4, 4, 2))
+
+plot(
+  effect_time,
+  covariate = "Publication.Year",
+  topics = ai_topic,
+  model = final_stm_20_adj,
+  method = "continuous",
+  xlab = "Publication Year",
+  ylab = "Expected Topic Proportion",
+  main = paste0("Generative AI Topic (T", ai_topic, ")"),
+  printlegend = FALSE,
+  xaxt = "n",
+  linecol = "navy",
+  ci.level = 0.95
+)
+axis(1, at = year_seq, labels = year_seq)
+
+plot(
+  effect_time,
+  covariate = "Publication.Year",
+  topics = openapi_topic,
+  model = final_stm_20_adj,
+  method = "continuous",
+  xlab = "Publication Year",
+  ylab = "Expected Topic Proportion",
+  main = paste0("Open Banking API Topic (T", openapi_topic, ")"),
+  printlegend = FALSE,
+  xaxt = "n",
+  linecol = "darkred",
+  ci.level = 0.95
+)
+axis(1, at = year_seq, labels = year_seq)
+
+dev.off()
+
+print("✅ 저장 완료: CoreTopics_Trend_2Panel_95CI.png / pdf")
+
+# ---------------------------------------------------------
+# 17. 20개 전체 토픽 estimateEffect 버전 개별 그래프 자동 저장
+#     - 토픽당 PNG/PDF 1개씩
+# ---------------------------------------------------------
+dir.create("All20Topics_Effect_Plots", showWarnings = FALSE)
+
+for (i in 1:K) {
+  
+  file_stub_i <- paste0(
+    "All20Topics_Effect_Plots/",
+    str_pad(i, width = 2, pad = "0"),
+    "_",
+    gsub("[^A-Za-z0-9]+", "_", topic_label_short[i])
+  )
+  
+  save_topic_ci_plot(
+    effect_obj = effect_time,
+    topic_num = i,
+    topic_name = topic_label_short[i],
+    years = year_seq,
+    file_stub = file_stub_i,
+    line_color = "navy"
+  )
+}
+
+print("✅ 저장 완료: All20Topics_Effect_Plots 폴더")
+
+# ---------------------------------------------------------
+# 18. 전체 워크스페이스 저장
+# ---------------------------------------------------------
+save.image("STM_TimeSeries_PostAnalysis_Workspace.RData")
+print("✅ 전체 저장 완료: STM_TimeSeries_PostAnalysis_Workspace.RData")
+
+# ---------------------------------------------------------
+# 19. 실행 완료 메시지
+# ---------------------------------------------------------
+cat("\n====================================================\n")
+cat("20개 토픽 시계열 동향 분석 완료\n")
+cat("생성 파일 목록:\n")
+cat("- STM_estimateEffect_time.RData\n")
+cat("- Topic_Year_Mean_Theta.csv\n")
+cat("- All20Topics_Year_Heatmap.png / pdf\n")
+cat("- All20Topics_Year_Lineplot_Facet.png / pdf\n")
+cat("- All20Topics_Yearly_Trends_Table.csv\n")
+cat("- Top5_Topics_By_Year.csv\n")
+cat("- CoreTopics_Yearly_MeanTheta.csv\n")
+cat("- Topic_Trend_GenerativeAI_95CI.png / pdf\n")
+cat("- Topic_Trend_OpenBankingAPI_95CI.png / pdf\n")
+cat("- CoreTopics_Trend_2Panel_95CI.png / pdf\n")
+cat("- All20Topics_Effect_Plots 폴더 (토픽별 개별 그래프)\n")
+cat("- STM_TimeSeries_PostAnalysis_Workspace.RData\n")
+cat("====================================================\n")
+
+# 저장할 경로와 파일명 설정
+file_path <- "C:/Users/gram/Documents/핀테크 특허 분석/k찾기/2. 전체+시각화.RData"
+
+# 워크스페이스 저장
+save.image(file = file_path)
+library(stm)
+library(stringr)
+library(stopwords)
+# [5] 데이터 프레임을 CSV 파일로 저장
+write.csv(topic_data, "TOPIC_PROPORTION_K20.csv", row.names = FALSE, fileEncoding = "UTF-8")
+library(dplyr) # dplyr 패키지 로드
+
+# 다시 정렬 및 저장 시도
+topic_data_sorted <- topic_data %>% arrange(desc(proportion))
+write.csv(topic_data_sorted, "TOPIC_PROPORTION_K20_SORTED.csv", row.names = FALSE, fileEncoding = "UTF-8")
+# -------------------------------
+# 18. 중심성(Centrality) 데이터 CSV 저장
+# -------------------------------
+# 논문/보고서 작성에 필요한 핵심 열만 선택
+centrality_df <- node_df[, c("topic", "label_short", "label_long", "mega_cluster", "prevalence", "degree", "betweenness", "eigenvector")]
+
+# 매개 중심성(Betweenness)이 높은 순서대로 내림차순 정렬 (허브 토픽을 위로)
+centrality_df_sorted <- centrality_df[order(-centrality_df$betweenness), ]
+
+# 소수점 자릿수 정리 (보기 좋게 4자리까지만 반올림, 선택 사항)
+centrality_df_sorted$prevalence <- round(centrality_df_sorted$prevalence, 4)
+centrality_df_sorted$betweenness <- round(centrality_df_sorted$betweenness, 4)
+centrality_df_sorted$eigenvector <- round(centrality_df_sorted$eigenvector, 4)
+
+# CSV 파일로 저장
+write.csv(centrality_df_sorted, "STM_Topic_Centrality.csv", row.names = FALSE, fileEncoding = "UTF-8")
+
+print("✅ 중심성 값 CSV 저장 완료: STM_Topic_Centrality.csv")
+
+# 필요한 패키지 로드 (이미 로드되어 있다면 생략 가능)
+library(tidyverse)
+library(stm)
+library(tidytext)
+
+# ==========================================
+# 1. PROB (Highest Probability) 기준 상위 15개 단어 추출 및 CSV 저장
+# ==========================================
+
+# [1.1] final_stm_20_adj 모델에서 상위 15개 단어 정보 가져오기
+topic_labels_20_adj <- labelTopics(final_stm_20_adj, n = 15)
+
+# [1.2] FREX 대신 'prob' (Probability) 추출
+prob_words_20_adj <- topic_labels_20_adj$prob
+
+# [1.3] PROB 단어 결과를 엑셀(CSV) 파일로 예쁘게 저장
+write.csv(prob_words_20_adj, "FINAL_K20_PROB_Words_Adj.csv", row.names = TRUE)
+print("🎉 [성공] K=20 최종 PROB 단어 엑셀 저장 완료!")
+
+# ==========================================
+# 2. PROB 기준 20개 토픽별 15개 단어 격자형 시각화 (Grid)
+# ==========================================
+
+# [2.1] 시각화를 위해 행/열을 뒤집고(Transpose) 열 이름 부여
+top_words_prob <- t(prob_words_20_adj[, 1:15])
+colnames(top_words_prob) <- paste0("Topic ", 1:20)
+
+# [2.2] ggplot이 좋아하는 Long format으로 데이터 변환
+prob_df <- as.data.frame(top_words_prob) %>%
+  mutate(rank = row_number()) %>%
+  pivot_longer(
+    cols = starts_with("Topic"),
+    names_to = "topic",
+    values_to = "word"
+  )
+
+# [2.3] ggplot2를 이용한 시각화 (FREX와 구분하기 위해 색상을 darkred로 변경)
+p_prob <- ggplot(prob_df, aes(x = reorder(word, -rank), y = 1, label = word)) +
+  geom_text(size = 3.5, color = "darkred", fontface = "bold") + 
+  facet_wrap(
+    ~ factor(topic, levels = paste0("Topic ", 1:20)),
+    scales = "free",
+    ncol = 4
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Top 15 PROB Words per Topic",
+    subtitle = "IP5 FinTech Patents - Highest Probability Words",
+    x = NULL,
+    y = NULL
+  ) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    strip.background = element_rect(fill = "gray90", color = "white"),
+    strip.text = element_text(face = "bold")
+  )
+
+# [2.4] 화면에 그래프 출력
+print(p_prob)
+
+# [2.5] 고해상도 PNG 파일로 저장
+ggsave("TOPIC_PROB_WORDS_GRID_15.png", plot = p_prob, width = 12, height = 18, dpi = 300)
+print("🖼️ [성공] PROB 단어 격자형 시각화 이미지 저장 완료!")
+
+# [1] Topic 19의 문서별 비중(theta) 값만 추출
+# final_stm_20_adj$theta 의 19번째 열이 Topic 19의 데이터입니다.
+theta_t19 <- final_stm_20_adj$theta[, 19]
+
+# [2] 현재 분석 중인 메타데이터(out3$meta)에 Topic 19 비중 컬럼 추가
+t19_docs <- out3$meta
+t19_docs$Topic_19_Proportion <- theta_t19
+
+# [3] Topic 19 비중이 높은 순서대로 내림차순 정렬 (가장 관련 깊은 특허가 맨 위로 오게)
+t19_docs_sorted <- t19_docs[order(-t19_docs$Topic_19_Proportion), ]
+
+# [4] 눈으로 리뷰하기 좋게 핵심 컬럼만 선택 (비중, 제목, 요약, 출원연도, 국가)
+# (만약 에러가 난다면 out3$meta에 있는 정확한 컬럼명으로 수정하면 됩니다)
+t19_review_df <- t19_docs_sorted[, c("Topic_19_Proportion", "Title", "Abstract", "Publication.Year", "Origin_Country")]
+
+# [5] 상위 100개 특허만 뽑아서 CSV 파일로 저장
+write.csv(head(t19_review_df, 100), "Review_Topic_19_EV_Charging.csv", row.names = FALSE, fileEncoding = "UTF-8")
+
+print("✅ [저장 완료] Review_Topic_19_EV_Charging.csv 파일이 생성되었습니다!")
+year_count_df <- out3$meta %>%
+  dplyr::count(Publication.Year, name = "n_patents") %>%
+  dplyr::arrange(Publication.Year)
+
+write.csv(year_count_df, "Yearly_Patent_Count.csv", row.names = FALSE)
+print(year_count_df)
+
+save(effect_time, file = "STM_estimateEffect_time.RData")
+# 역슬래시(\)를 슬래시(/)로 수정한 경로를 사용합니다.
+save.image(file = "C:/Users/gram/Documents/핀테크 특허 분석/k찾기/3. 전체 + 시각화 + 추가.RData")
+load(file = "C:/Users/gram/Documents/핀테크 특허 분석/k찾기/3. 전체 + 시각화 + 추가.RData")
+
+
+# ---------------------------------------------------------
+# 기술 융합 생태계 매핑 (덴드로그램 5가지 버전)
+# ---------------------------------------------------------
+# ---------------------------------------------------------
+# 1. 5개 클러스터 체계 기반 메가 클러스터 재설정 (보고서 내용 반영)
+# ---------------------------------------------------------
+# 덴드로그램 분석 결과 도출된 5개 그룹으로 토픽을 매핑합니다.
+mega_cluster_map <- rep(NA, 20)
+
+# 첫째: 금융 운영·감사 자동화 (Financial Ops & Audit)
+mega_cluster_map[c(4, 11)] <- "Ops & Audit Automation"
+
+# 둘째: 금융 의사결정·리스크 평가 (Decision & Risk Assessment)
+mega_cluster_map[c(3, 18, 13, 9, 17)] <- "Decision & Risk Assessment"
+
+# 셋째: 블록체인·디지털 자산 인프라 (Blockchain & Digital Asset)
+mega_cluster_map[c(14, 19, 1, 8, 6, 12)] <- "Blockchain & Digital Asset"
+
+# 넷째: 인증·컴플라이언스 기반 (Auth & Compliance)
+mega_cluster_map[c(7, 15)] <- "Auth & Compliance"
+
+# 다섯째: 계좌·결제 실행 (Account & Payment Execution)
+mega_cluster_map[c(5, 10, 16, 2, 20)] <- "Account & Payment Execution"
+
+# ---------------------------------------------------------
+# 2. 네트워크 분석용 라이브러리 및 데이터 준비
+# ---------------------------------------------------------
+library(stm)
+library(igraph)
+library(RColorBrewer)
+
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# 상관관계 및 노드 기본 정보 계산
+topic_corr_obj <- topicCorr(final_stm_20_adj)
+corr_mat <- if (!is.null(topic_corr_obj$posadj)) topic_corr_obj$posadj else topic_corr_obj$cor
+K <- 20
+colnames(corr_mat) <- rownames(corr_mat) <- paste0("T", 1:K)
+
+# 임계치 설정 (0.15)
+threshold <- 0.15
+adj_mat <- corr_mat
+adj_mat[adj_mat < threshold] <- 0
+diag(adj_mat) <- 0
+
+g <- graph_from_adjacency_matrix(adj_mat, mode = "undirected", weighted = TRUE)
+all_topic_names <- paste0("T", 1:K)
+missing_nodes <- setdiff(all_topic_names, V(g)$name)
+if (length(missing_nodes) > 0) g <- add_vertices(g, nv = length(missing_nodes), name = missing_nodes)
+g <- permute(g, match(all_topic_names, V(g)$name))
+
+# 노드 데이터프레임 구축
+theta_mat <- final_stm_20_adj$theta
+topic_prevalence <- colMeans(theta_mat)
+node_df <- data.frame(
+  topic = paste0("T", 1:K),
+  prevalence = topic_prevalence,
+  mega_cluster = mega_cluster_map,
+  stringsAsFactors = FALSE
+)
+
+# ---------------------------------------------------------
+# 3. 색상 설정 (5개 클러스터용 뚜렷한 색상)
+# ---------------------------------------------------------
+cluster_levels <- c("Ops & Audit Automation", "Decision & Risk Assessment", 
+                    "Blockchain & Digital Asset", "Auth & Compliance", 
+                    "Account & Payment Execution")
+
+# 보고서의 계층적 구조를 강조하기 위한 색상 조합
+cluster_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00")
+names(cluster_colors) <- cluster_levels
+node_df$color <- cluster_colors[node_df$mega_cluster]
+
+# ---------------------------------------------------------
+# 4. 시각화 및 중심성 분석
+# ---------------------------------------------------------
+# 노드 크기 및 라벨 설정
+node_df$node_size <- 12 + (node_df$prevalence - min(node_df$prevalence)) * 23 / (max(node_df$prevalence) - min(node_df$prevalence))
+topic_label_short <- c("Crypto Exchange", "Mobile POS Pay", "Insurance Claim", "Invoice Audit", 
+                       "Bank Remittance", "Digital Wallet", "Auth & Biometrics", "NFT Rights", 
+                       "Investment Reco", "Settlement Proc", "Enterprise Finance", "Asset Ledger", 
+                       "Credit Risk", "Smart Contract", "Realtime Settle", "E-commerce Fee", 
+                       "AI Detection", "Device Linking", "Charging Txn", "Face/Voice Login")
+
+V(g)$size <- node_df$node_size
+V(g)$color <- node_df$color
+V(g)$label <- topic_label_short
+V(g)$label.cex <- 0.8
+V(g)$label.color <- "black"
+V(g)$frame.color <- "gray40"
+
+# 엣지 굵기 조정
+if (ecount(g) > 0) {
+  E(g)$width <- 1 + 7 * (E(g)$weight / max(E(g)$weight))
+  E(g)$color <- adjustcolor("gray50", alpha.f = 0.4)
+}
+
+# ---------------------------------------------------------
+# 5. 결과 저장 (PNG/CSV/RData)
+# ---------------------------------------------------------
+set.seed(2026)
+lay <- layout_with_fr(g)
+
+# 고해상도 이미지 저장
+png(filename = "STM_Network_5_Clusters.png", width = 2600, height = 1900, res = 280)
+par(mar = c(1, 1, 3, 1))
+plot(g, layout = lay, main = "FinTech Technology Structure: 5-Cluster Convergence Map")
+legend("topleft", legend = names(cluster_colors), pt.bg = cluster_colors, 
+       pch = 21, pt.cex = 2, bty = "n", cex = 1, title = "Structural Clusters")
+dev.off()
+
+# 중심성 결과 저장 (5개 클러스터의 허브 토픽 확인용)
+bet <- betweenness(g, normalized = TRUE)
+node_df$betweenness <- bet
+write.csv(node_df[order(-node_df$betweenness), ], "Centrality_5_Clusters.csv", row.names = FALSE)
+
+# 전체 워크스페이스 저장
+save(g, node_df, lay, file = "STM_5_Clusters_Final.RData")
+
+cat("\n✅ 5개 클러스터 기준 네트워크 분석이 완료되었습니다.\n")
+cat("📊 생성 파일: STM_Network_5_Clusters.png, Centrality_5_Clusters.csv\n")
+# ---------------------------------------------------------
+# 4. 시각화 속성 수정 (선을 더 얇고 세련되게)
+# ---------------------------------------------------------
+
+# 노드 라벨 크기 살짝 조정
+V(g)$label.cex <- 0.7 
+
+# 엣지(선) 설정 수정
+if (ecount(g) > 0) {
+  # 가중치 범위를 0.5 ~ 4 정도로 대폭 축소 (기존은 1~8)
+  # log나 제곱근을 활용하면 너무 굵어지는 현상을 방지할 수 있습니다.
+  E(g)$width <- 0.5 + 4 * (E(g)$weight)^2 
+  
+  # 선 색상을 더 연한 회색으로, 투명도를 높임 (0.4 -> 0.25)
+  E(g)$color <- adjustcolor("gray60", alpha.f = 0.25)
+}
+
+# ---------------------------------------------------------
+# 5. 시각화 및 재저장
+# ---------------------------------------------------------
+set.seed(2026)
+# 노드 간 반발력을 높여서 더 넓게 퍼지도록 layout 설정
+lay <- layout_with_fr(g, niter = 1000) 
+
+png(filename = "STM_Network_5_Clusters_Clean.png", width = 2600, height = 1900, res = 300)
+par(mar = c(1, 1, 3, 1))
+plot(g, layout = lay, 
+     main = "FinTech Technology Structure: 5-Cluster Convergence Map",
+     vertex.label.dist = 0.6) # 라벨을 노드에서 살짝 떨어뜨려 가독성 확보
+legend("topleft", legend = names(cluster_colors), pt.bg = cluster_colors, 
+       pch = 21, pt.cex = 2, bty = "n", cex = 1, title = "Structural Clusters")
+dev.off()
+# -------------------------------
+# Betweenness 중심성 계산
+# -------------------------------
+bet <- betweenness(g, normalized = TRUE)
+
+# 노드 데이터에 추가
+node_df$betweenness <- bet
+
+# -------------------------------
+# Betweenness 기준 정렬
+# -------------------------------
+centrality_sorted <- node_df[order(-node_df$betweenness), ]
+
+# -------------------------------
+# CSV 저장 (전체 결과)
+# -------------------------------
+write.csv(centrality_sorted, 
+          "Centrality_5_Clusters_FULL.csv", 
+          row.names = FALSE)
+
+# -------------------------------
+# 상위 3개 토픽만 따로 저장
+# -------------------------------
+top3 <- head(centrality_sorted, 3)
+
+write.csv(top3, 
+          "Top3_Betweenness_Topics.csv", 
+          row.names = FALSE)
+
+# -------------------------------
+# 콘솔 출력 (바로 확인용)
+# -------------------------------
+cat("\n📊 Betweenness Top 3 Topics:\n")
+print(top3)
+
+# ==========================================
+# 시계열 동향 분석 및 시각화 코드 (수정본)
+# ==========================================
+# 기준 객체:
+#   - final_stm_20_adj
+#   - out3
+#   - Publication.Year
+# 수정 사항:
+#   - 메가 클러스터 5개 그룹 재분류 반영
+#   - 핵심 토픽(T17: 생성형 AI, T5: 오픈뱅킹 API) 지정
+# =========================================================
+
+# ---------------------------------------------------------
+# 0. 패키지 로드
+# ---------------------------------------------------------
+library(stm)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(gridExtra)
+
+# ---------------------------------------------------------
+# 1. 작업 폴더 설정
+# ---------------------------------------------------------
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# ---------------------------------------------------------
+# 2. 객체 존재 확인
+# ---------------------------------------------------------
+if (!exists("final_stm_20_adj")) stop("final_stm_20_adj 객체가 없습니다.")
+if (!exists("out3")) stop("out3 객체가 없습니다.")
+
+# ---------------------------------------------------------
+# 3. 새로운 메가 클러스터 맵 생성 (사용자 요청 반영)
+# ---------------------------------------------------------
+K <- 20
+mega_cluster_map <- character(K)
+
+# 클러스터 정의
+mega_cluster_map[c(4, 11)] <- "금융 운영·감사 자동화"
+mega_cluster_map[c(3, 18, 13, 9, 17)] <- "금융 의사결정·리스크 평가"
+mega_cluster_map[c(14, 19, 1, 8, 6, 12)] <- "블록체인·디지털 자산 인프라"
+mega_cluster_map[c(7, 15)] <- "인증·컴플라이언스 기반"
+mega_cluster_map[c(5, 10, 16, 2, 20)] <- "계좌·결제 실행"
+
+# ---------------------------------------------------------
+# 4. 토픽명/메가클러스터용 테이블 정리
+# ---------------------------------------------------------
+topic_info <- data.frame(
+  topic_num = 1:K,
+  topic_id = paste0("T", 1:K),
+  mega_cluster = mega_cluster_map,
+  stringsAsFactors = FALSE
+)
+
+# ---------------------------------------------------------
+# 5. estimateEffect 적합
+# ---------------------------------------------------------
+# 통제변수 존재 여부에 따른 동적 처리
+has_country <- "Origin_Country" %in% colnames(out3$meta)
+has_adj <- "C_adj_i" %in% colnames(out3$meta)
+
+if (has_country && has_adj) {
+  form <- 1:K ~ s(Publication.Year) + Origin_Country + C_adj_i
+} else if (has_country) {
+  form <- 1:K ~ s(Publication.Year) + Origin_Country
+} else if (has_adj) {
+  form <- 1:K ~ s(Publication.Year) + C_adj_i
+} else {
+  form <- 1:K ~ s(Publication.Year)
+}
+
+effect_time <- estimateEffect(
+  form,
+  stmobj = final_stm_20_adj,
+  metadata = out3$meta,
+  uncertainty = "Global"
+)
+
+save(effect_time, file = "STM_estimateEffect_time.RData")
+print("✅ estimateEffect 저장 완료")
+
+# ---------------------------------------------------------
+# 6. 연도 범위 및 데이터 정리
+# ---------------------------------------------------------
+year_seq <- seq(min(out3$meta$Publication.Year, na.rm = TRUE),
+                max(out3$meta$Publication.Year, na.rm = TRUE), by = 1)
+
+theta_df <- as.data.frame(final_stm_20_adj$theta)
+colnames(theta_df) <- paste0("T", 1:K)
+theta_df$Publication.Year <- out3$meta$Publication.Year
+
+topic_year_mean <- theta_df %>%
+  pivot_longer(cols = starts_with("T"), names_to = "topic_id", values_to = "topic_prop") %>%
+  group_by(Publication.Year, topic_id) %>%
+  summarise(mean_prop = mean(topic_prop, na.rm = TRUE), .groups = "drop") %>%
+  left_join(topic_info, by = "topic_id")
+
+# ---------------------------------------------------------
+# 7. 메가 클러스터 연도별 히트맵 생성 및 저장
+# ---------------------------------------------------------
+cluster_year_df <- topic_year_mean %>%
+  group_by(Publication.Year, mega_cluster) %>%
+  summarise(cluster_prop = sum(mean_prop, na.rm = TRUE), .groups = "drop")
+
+# 클러스터 순서 고정 (요청하신 순서대로)
+cluster_order <- c("금융 운영·감사 자동화", "금융 의사결정·리스크 평가", 
+                   "블록체인·디지털 자산 인프라", "인증·컴플라이언스 기반", "계좌·결제 실행")
+cluster_year_df$mega_cluster <- factor(cluster_year_df$mega_cluster, levels = rev(cluster_order))
+
+p_heatmap <- ggplot(cluster_year_df, aes(x = Publication.Year, y = mega_cluster, fill = cluster_prop)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_x_continuous(breaks = year_seq) +
+  scale_fill_gradient(low = "#f7f7f7", high = "#08519c", labels = percent_format(accuracy = 0.1)) +
+  labs(title = "Yearly Heatmap of Mega-Cluster Proportions",
+       x = "Publication Year", y = "Mega Cluster", fill = "Proportion") +
+  theme_minimal(base_family = "NanumGothic") + # 한글 폰트가 설치되어 있어야 함
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave("MegaCluster_Year_Heatmap_Revised.png", plot = p_heatmap, width = 12, height = 7, dpi = 300)
+
+# ---------------------------------------------------------
+# 8. 핵심 토픽 시계열 선그래프 (T17, T5)
+# ---------------------------------------------------------
+ai_topic <- 17      # Generative AI (금융 의사결정 클러스터)
+openapi_topic <- 5  # Open Banking API (계좌·결제 실행 클러스터)
+
+png("CoreTopics_Trend_Revised_95CI.png", width = 1800, height = 800, res = 180)
+par(mfrow = c(1, 2), mar = c(5, 4, 4, 2))
+
+# T17 시각화
+plot(effect_time, covariate = "Publication.Year", topics = ai_topic,
+     model = final_stm_20_adj, method = "continuous", xlab = "Year", ylab = "Expected Prop",
+     main = "T17: Generative AI Trend", linecol = "navy", ci.level = 0.95, xaxt = "n")
+axis(1, at = year_seq)
+
+# T5 시각화
+plot(effect_time, covariate = "Publication.Year", topics = openapi_topic,
+     model = final_stm_20_adj, method = "continuous", xlab = "Year", ylab = "Expected Prop",
+     main = "T5: Open Banking API Trend", linecol = "darkred", ci.level = 0.95, xaxt = "n")
+axis(1, at = year_seq)
+
+dev.off()
+
+# ---------------------------------------------------------
+# 9. 결과 데이터 저장
+# ---------------------------------------------------------
+write.csv(cluster_year_df, "MegaCluster_Yearly_Proportions.csv", row.names = FALSE)
+write.csv(topic_year_mean %>% filter(topic_num %in% c(ai_topic, openapi_topic)), 
+          "CoreTopics_Yearly_MeanTheta.csv", row.names = FALSE)
+save.image("STM_TimeSeries_Revised_Workspace.RData")
+
+cat("\n====================================================\n")
+cat("✅ 메가 클러스터 수정 반영 분석 완료\n")
+cat("- 수정된 클러스터: 5개 그룹\n")
+cat("- 분석 대상 토픽: T17(생성형 AI), T5(오픈뱅킹)\n")
+cat("====================================================\n")
+# ---------------------------------------------------------
+# 14. 연도별 상위 토픽 변화 표 추출 및 저장
+#     - 각 연도마다 평균 비중(mean_prop)이 높은 상위 5개 토픽 선정
+# ---------------------------------------------------------
+
+top5_topic_each_year <- topic_year_mean %>%
+  group_by(Publication.Year) %>%
+  arrange(Publication.Year, desc(mean_prop)) %>%
+  slice_head(n = 5) %>%
+  ungroup() %>%
+  # 논문 가독성을 위해 순위 열 추가
+  group_by(Publication.Year) %>%
+  mutate(Rank = row_number()) %>%
+  ungroup() %>%
+  select(Publication.Year, Rank, topic_id, topic_num, mean_prop, mega_cluster)
+
+# CSV 파일로 저장
+write.csv(top5_topic_each_year, "Top5_Topics_By_Year.csv", row.names = FALSE, fileEncoding = "CP949")
+
+print("✅ 저장 완료: Top5_Topics_By_Year.csv (연도별 상위 5개 토픽)")
+
+# =========================================================
+# 핀테크 특허 STM 분석: 시계열 동향 및 논문 결과 정리 전체 코드
+# 기준 객체: final_stm_20_adj, out3
+# 작성자: AI 서포터 (정윤 님 프로젝트용)
+# =========================================================
+
+# ---------------------------------------------------------
+# 0. 패키지 로드 및 환경 설정
+# ---------------------------------------------------------
+library(stm)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(gridExtra)
+
+# 작업 디렉토리 설정 (본인의 경로에 맞게 확인)
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# ---------------------------------------------------------
+# 1. 메가 클러스터 정의 (사용자 지정 5개 그룹)
+# ---------------------------------------------------------
+K <- 20
+mega_cluster_map <- character(K)
+
+mega_cluster_map[c(4, 11)] <- "금융 운영·감사 자동화"
+mega_cluster_map[c(3, 18, 13, 9, 17)] <- "금융 의사결정·리스크 평가"
+mega_cluster_map[c(14, 19, 1, 8, 6, 12)] <- "블록체인·디지털 자산 인프라"
+mega_cluster_map[c(7, 15)] <- "인증·컴플라이언스 기반"
+mega_cluster_map[c(5, 10, 16, 2, 20)] <- "계좌·결제 실행"
+
+topic_info <- data.frame(
+  topic_num = 1:K,
+  topic_id = paste0("T", 1:K),
+  mega_cluster = mega_cluster_map,
+  stringsAsFactors = FALSE
+)
+
+# ---------------------------------------------------------
+# 2. estimateEffect 적합 (연도 효과 추정)
+# ---------------------------------------------------------
+# 변수 존재 여부 자동 체크 후 수식 결정
+has_country <- "Origin_Country" %in% colnames(out3$meta)
+has_adj <- "C_adj_i" %in% colnames(out3$meta)
+
+if (has_country && has_adj) {
+  form <- 1:K ~ s(Publication.Year) + Origin_Country + C_adj_i
+} else if (has_country) {
+  form <- 1:K ~ s(Publication.Year) + Origin_Country
+} else {
+  form <- 1:K ~ s(Publication.Year)
+}
+
+effect_time <- estimateEffect(form, stmobj = final_stm_20_adj, 
+                              metadata = out3$meta, uncertainty = "Global")
+
+# ---------------------------------------------------------
+# 3. 데이터 정리 (연도별 평균 비중 계산)
+# ---------------------------------------------------------
+year_seq <- seq(min(out3$meta$Publication.Year, na.rm = TRUE),
+                max(out3$meta$Publication.Year, na.rm = TRUE), by = 1)
+
+theta_df <- as.data.frame(final_stm_20_adj$theta)
+colnames(theta_df) <- paste0("T", 1:K)
+theta_df$Publication.Year <- out3$meta$Publication.Year
+
+topic_year_mean <- theta_df %>%
+  pivot_longer(cols = starts_with("T"), names_to = "topic_id", values_to = "topic_prop") %>%
+  group_by(Publication.Year, topic_id) %>%
+  summarise(mean_prop = mean(topic_prop, na.rm = TRUE), .groups = "drop") %>%
+  left_join(topic_info, by = "topic_id")
+
+# ---------------------------------------------------------
+# 4. [시각화 1] 메가 클러스터 연도별 히트맵
+# ---------------------------------------------------------
+cluster_year_df <- topic_year_mean %>%
+  group_by(Publication.Year, mega_cluster) %>%
+  summarise(cluster_prop = sum(mean_prop, na.rm = TRUE), .groups = "drop")
+
+cluster_order <- c("금융 운영·감사 자동화", "금융 의사결정·리스크 평가", 
+                   "블록체인·디지털 자산 인프라", "인증·컴플라이언스 기반", "계좌·결제 실행")
+cluster_year_df$mega_cluster <- factor(cluster_year_df$mega_cluster, levels = rev(cluster_order))
+
+p_heatmap <- ggplot(cluster_year_df, aes(x = Publication.Year, y = mega_cluster, fill = cluster_prop)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_x_continuous(breaks = year_seq) +
+  scale_fill_gradient(low = "#f7f7f7", high = "#08519c", labels = percent_format(accuracy = 0.1)) +
+  labs(title = "Yearly Heatmap of Mega-Cluster Proportions", x = "Year", y = "Mega Cluster", fill = "Prop") +
+  theme_minimal()
+
+ggsave("Final_MegaCluster_Heatmap.png", plot = p_heatmap, width = 12, height = 7, dpi = 300)
+
+# ---------------------------------------------------------
+# 5. [시각화 2] 핵심 토픽 2패널 선그래프 (요청하신 사진 형태)
+# ---------------------------------------------------------
+ai_topic <- 17      # Generative AI
+openapi_topic <- 5  # Open Banking API
+
+png("CoreTopics_Trend_2Panel_Final.png", width = 1800, height = 800, res = 180)
+par(mfrow = c(1, 2), mar = c(5, 4, 4, 2))
+
+# 왼쪽 패널: T17
+plot(effect_time, covariate = "Publication.Year", topics = ai_topic,
+     model = final_stm_20_adj, method = "continuous", xlab = "Year", ylab = "Expected Prop",
+     main = paste0("Generative AI Topic (T", ai_topic, ")"), 
+     linecol = "navy", ci.level = 0.95, xaxt = "n")
+axis(1, at = year_seq)
+
+# 오른쪽 패널: T5
+plot(effect_time, covariate = "Publication.Year", topics = openapi_topic,
+     model = final_stm_20_adj, method = "continuous", xlab = "Year", ylab = "Expected Prop",
+     main = paste0("Open Banking API Topic (T", openapi_topic, ")"), 
+     linecol = "darkred", ci.level = 0.95, xaxt = "n")
+axis(1, at = year_seq)
+
+dev.off()
+
+# ---------------------------------------------------------
+# 6. 논문용 결과 파일(CSV) 저장
+# ---------------------------------------------------------
+# 1) 연도별 상위 5개 토픽
+top5_topic_each_year <- topic_year_mean %>%
+  group_by(Publication.Year) %>%
+  arrange(desc(mean_prop)) %>%
+  slice_head(n = 5) %>%
+  mutate(Rank = row_number()) %>%
+  ungroup()
+
+write.csv(top5_topic_each_year, "Top5_Topics_By_Year.csv", row.names = FALSE)
+
+# 2) 토픽별 핵심 단어 요약 (Frex 기반)
+topic_labels <- labelTopics(final_stm_20_adj, n = 10)
+topic_words_df <- data.frame(
+  topic_num = 1:K,
+  Top_Words = apply(topic_labels$frex, 1, paste, collapse = ", "),
+  stringsAsFactors = FALSE
+)
+final_summary <- topic_words_df %>% left_join(topic_info, by = "topic_num")
+write.csv(final_summary, "Topic_Word_Summary.csv", row.names = FALSE)
+
+# 3) 기타 정량 데이터
+write.csv(cluster_year_df, "MegaCluster_Yearly_Proportions.csv", row.names = FALSE)
+save.image("Final_Thesis_Workspace.RData")
+
+cat("\n====================================================\n")
+cat("✅ 모든 분석 및 파일 저장이 완료되었습니다.\n")
+cat("====================================================\n")
+
+# =========================================================
+# 5개 메가 클러스터별 시계열 추이 (Facet Line Plot)
+# =========================================================
+
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+# 1. 데이터 준비 (이미 앞선 코드에서 계산된 cluster_year_df 활용)
+# 만약 메모리에 없다면 아래 주석 해제 후 실행
+# cluster_year_df <- topic_year_mean %>%
+#   group_by(Publication.Year, mega_cluster) %>%
+#   summarise(cluster_prop = sum(mean_prop, na.rm = TRUE), .groups = "drop")
+
+# 2. 클러스터 순서 정렬 (요청하신 순서)
+cluster_order <- c("금융 운영·감사 자동화", "금융 의사결정·리스크 평가", 
+                   "블록체인·디지털 자산 인프라", "인증·컴플라이언스 기반", "계좌·결제 실행")
+cluster_year_df$mega_cluster <- factor(cluster_year_df$mega_cluster, levels = cluster_order)
+
+# 3. 선그래프 시각화 (보내주신 사진 스타일)
+p_facet <- ggplot(cluster_year_df, aes(x = Publication.Year, y = cluster_prop, group = mega_cluster)) +
+  # 선 그래프와 점 추가
+  geom_line(color = "steelblue", linewidth = 1.2) +
+  geom_point(color = "steelblue", size = 2) +
+  # 연도별로 구획 나누기 (사진처럼 각 클러스터별 박스 생성)
+  facet_wrap(~ mega_cluster, ncol = 3, scales = "free_y") + 
+  # X축 연도 설정
+  scale_x_continuous(breaks = seq(min(cluster_year_df$Publication.Year), 
+                                  max(cluster_year_df$Publication.Year), by = 1)) +
+  # Y축 퍼센트 표기
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  # 테마 설정 (사진의 깔끔한 스타일 재현)
+  theme_bw(base_family = "NanumGothic") + 
+  labs(
+    title = "Time-Series Trends by 5 Mega-Clusters",
+    subtitle = "Aggregated Expected Topic Proportions (2019-2024)",
+    x = "Publication Year",
+    y = "Expected Proportion (%)"
+  ) +
+  theme(
+    strip.background = element_rect(fill = "gray90"), # 상단 라벨 박스 색상
+    strip.text = element_text(face = "bold", size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank()
+  )
+
+# 4. 이미지 저장
+ggsave("MegaCluster_TimeSeries_FacetPlot.png", plot = p_facet, width = 14, height = 8, dpi = 300)
+
+# 그래프 출력
+print(p_facet)
+
+# ---------------------------------------------------------
+# [데이터 저장] 5개 메가 클러스터 연도별 비중 수치 (CSV)
+# ---------------------------------------------------------
+
+# 1. 데이터 확인 및 정렬 (연도순, 클러스터순)
+cluster_table_data <- cluster_year_df %>%
+  arrange(Publication.Year, mega_cluster) %>%
+  mutate(cluster_prop_pct = round(cluster_prop * 100, 2)) # 퍼센트(%) 단위 열 추가
+
+# 2. CSV 파일로 저장
+# 파일명: MegaCluster_TimeSeries_Data.csv
+write.csv(cluster_table_data, "MegaCluster_TimeSeries_Data.csv", row.names = FALSE, fileEncoding = "CP949")
+
+print("✅ 저장 완료: MegaCluster_TimeSeries_Data.csv")
+print("이 파일에는 각 클러스터의 연도별 비중(%) 수치가 들어있습니다.")
+
+# 역슬래시(\)를 슬래시(/)로 수정한 경로를 사용합니다.
+save.image(file = "C:/Users/gram/Documents/핀테크 특허 분석/k찾기/4.추가버전.RData")
+
+library(stm)
+library(stringr)
+library(stopwords)
+# ==========================================
+# 🏆 최신 전처리(out3) + 조정 피인용수(C_adj_i)가 적용된 K=19 정식 학습
+# ==========================================
+
+# [1] 시드 고정 및 모델 학습 (완벽한 수렴을 위해 반복 횟수 150회 부여)
+set.seed(2026) 
+final_stm_19_adj <- stm(documents = out3$documents, 
+                        vocab = out3$vocab, 
+                        K = 19, 
+                        prevalence = ~ Origin_Country + s(Publication.Year) + C_adj_i, # 💡 조정 피인용수 탑재!
+                        data = out3$meta,
+                        max.em.its = 150, 
+                        init.type = "Spectral")
+
+# [2] FREX 지표를 기준으로 각 토픽의 핵심 시그니처 단어 추출 (상위 15개)
+topic_labels_19_adj <- labelTopics(final_stm_19_adj, n = 15)
+frex_words_19_adj <- topic_labels_19_adj$frex
+
+# [3] FREX 단어 결과를 엑셀(CSV) 파일로 예쁘게 저장
+write.csv(frex_words_19_adj, "FINAL_K19_FREX_Words_Adj.csv", row.names = TRUE)
+print("🎉 [성공] K=19 최종 FREX 단어(조정 피인용수 적용) 엑셀 저장 완료!")
+
+# [4] (매우 중요) 완성된 최종 모델만 따로 안전하게 영구 보존!
+save(final_stm_19_adj, file = "fintech_final_model_K19_Adj.RData")
+print("💾 [성공] K=19 최종 모델 백업 완료!")
+# 파일 이름을 따옴표 안에 정확히 입력하세요.
+load("5. 19확인까지.RData")
+#------------------------------------------------#
+library(stm)
+library(stringr)
+library(stopwords)
+
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(tidyr)
+library(gridExtra)
+# =========================================================
+# K=20 기술 융합 생태계 매핑용 Edge Table 저장
+# 기준: final_stm_20_adj / topicCorr / threshold = 0.15
+# 라벨 없이, 토픽 번호와 5개 클러스터 정보만 저장
+# =========================================================
+
+# -------------------------------
+# 0. 패키지 로드
+# -------------------------------
+library(stm)
+
+# -------------------------------
+# 1. 객체 확인
+# -------------------------------
+if (!exists("final_stm_20_adj")) stop("final_stm_20_adj 객체가 없습니다.")
+if (!exists("mega_cluster_map")) stop("mega_cluster_map 객체가 없습니다.")
+
+# -------------------------------
+# 2. topicCorr 실행 및 상관행렬 추출
+# -------------------------------
+topic_corr_obj <- topicCorr(final_stm_20_adj)
+
+if (!is.null(topic_corr_obj$posadj)) {
+  corr_mat <- topic_corr_obj$posadj
+} else if (!is.null(topic_corr_obj$cor)) {
+  corr_mat <- topic_corr_obj$cor
+} else {
+  stop("topicCorr 결과에서 상관행렬을 찾을 수 없습니다.")
+}
+
+# -------------------------------
+# 3. 토픽 이름 부여
+# -------------------------------
+K <- ncol(final_stm_20_adj$theta)
+
+if (is.null(rownames(corr_mat))) rownames(corr_mat) <- paste0("T", 1:K)
+if (is.null(colnames(corr_mat))) colnames(corr_mat) <- paste0("T", 1:K)
+
+# -------------------------------
+# 4. threshold 적용
+# -------------------------------
+threshold <- 0.15
+
+adj_mat <- corr_mat
+adj_mat[adj_mat < threshold] <- 0
+diag(adj_mat) <- 0
+adj_mat[adj_mat < 0] <- 0
+
+# -------------------------------
+# 5. upper triangle에서만 edge 추출
+#    (중복 제거: T1-T2와 T2-T1 중 하나만 저장)
+# -------------------------------
+edge_idx <- which(adj_mat > 0 & upper.tri(adj_mat), arr.ind = TRUE)
+
+edge_table <- data.frame(
+  from = rownames(adj_mat)[edge_idx[, 1]],
+  to   = colnames(adj_mat)[edge_idx[, 2]],
+  weight = adj_mat[edge_idx],
+  stringsAsFactors = FALSE
+)
+
+# -------------------------------
+# 6. 보조 변수 추가
+# -------------------------------
+edge_table$abs_weight <- abs(edge_table$weight)
+edge_table$sign <- ifelse(edge_table$weight > 0, "positive",
+                          ifelse(edge_table$weight < 0, "negative", "zero"))
+
+# -------------------------------
+# 7. 5개 클러스터 정보 붙이기
+#    mega_cluster_map은 T1~TK 순서라고 가정
+# -------------------------------
+cluster_df <- data.frame(
+  topic = paste0("T", 1:K),
+  cluster = mega_cluster_map,
+  stringsAsFactors = FALSE
+)
+
+edge_table$from_cluster <- cluster_df$cluster[match(edge_table$from, cluster_df$topic)]
+edge_table$to_cluster   <- cluster_df$cluster[match(edge_table$to, cluster_df$topic)]
+
+edge_table$edge_type <- ifelse(edge_table$from_cluster == edge_table$to_cluster,
+                               "within_cluster", "between_cluster")
+
+# -------------------------------
+# 8. 정렬
+# -------------------------------
+edge_table <- edge_table[order(-edge_table$weight), ]
+
+# -------------------------------
+# 9. 저장
+# -------------------------------
+write.csv(edge_table, "STM_Topic_Ecosystem_Edge_Table.csv", row.names = FALSE)
+
+cat("✅ 저장 완료: STM_Topic_Ecosystem_Edge_Table.csv\n")
+cat("총 edge 수:", nrow(edge_table), "\n")
+print(head(edge_table, 10))
+# 가장 강한 연결 상위 10개
+head(edge_table, 10)
+
+# 클러스터 내부 vs 클러스터 간 평균 연결강도
+aggregate(weight ~ edge_type, data = edge_table, mean)
+
+# 어떤 클러스터 쌍이 강하게 연결되는지
+cluster_pair_summary <- aggregate(weight ~ from_cluster + to_cluster,
+                                  data = edge_table,
+                                  FUN = function(x) c(mean = mean(x), n = length(x)))
+
+print(cluster_pair_summary)
+#------------------------------------------------#
+library(stm)
+library(stringr)
+library(stopwords)
+
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(tidyr)
+library(gridExtra)
+# =========================================================
+# 1. 20개 토픽 모델에서 17번 토픽의 문서별 비중(theta) 추출
+# final_stm_20_adj$theta의 17번째 열이 Topic 17의 데이터입니다.
+theta_t17 <- final_stm_20_adj$theta[, 17]
+
+# 2. 메타데이터(out3$meta)에 17번 토픽 비중 컬럼 추가
+# 분석 중인 원본 데이터와 비중 값을 결합합니다.
+t17_docs <- out3$meta
+t17_docs$Topic_17_Proportion <- theta_t17
+
+# 3. 17번 토픽 비중이 높은 순서대로 내림차순 정렬
+# 가장 관련성이 높은 특허가 맨 위로 오게 됩니다.
+t17_docs_sorted <- t17_docs[order(-t17_docs$Topic_17_Proportion), ]
+
+# 4. 리뷰를 위해 핵심 컬럼만 선택
+# (비중, 제목, 요약, 출원연도, 국가 등 본인의 데이터 컬럼명에 맞춰 조정하세요)
+t17_review_df <- t17_docs_sorted[, c("Topic_17_Proportion", "Title", "Abstract", "Publication.Year", "Origin_Country")]
+
+# 5. [방법 A] 상위 100개 특허를 CSV 파일로 저장 (엑셀에서 편하게 보기)
+write.csv(head(t17_review_df, 100), "Review_Topic_17_GenAI.csv", row.names = FALSE, fileEncoding = "UTF-8")
+
+# 6. [방법 B] R 콘솔에서 상위 10개만 즉시 확인
+print("--- Topic 17 상위 10개 특허 리스트 ---")
+print(head(t17_review_df, 10))
+# 1. 20개 토픽 모델에서 3번 토픽의 문서별 비중(theta) 추출
+# final_stm_20_adj$theta의 3번째 열을 가져옵니다.
+theta_t3 <- final_stm_20_adj$theta[, 3]
+
+# 2. 메타데이터(out3$meta)에 3번 토픽 비중 컬럼 추가
+t3_docs <- out3$meta
+t3_docs$Topic_03_Proportion <- theta_t3
+
+# 3. 3번 토픽 비중이 높은 순서대로 내림차순 정렬
+# 해당 주제와 가장 관련성이 높은 핵심 특허들이 상단에 배치됩니다.
+t3_docs_sorted <- t3_docs[order(-t3_docs$Topic_03_Proportion), ]
+
+# 4. 리뷰용 핵심 컬럼 선택 (비중, 제목, 요약, 연도, 국가)
+t3_review_df <- t3_docs_sorted[, c("Topic_03_Proportion", "Title", "Abstract", "Publication.Year", "Origin_Country")]
+
+# 5. 상위 100개 특허를 CSV 파일로 저장
+# 파일명: Review_Topic_03_Insurance.csv
+write.csv(head(t3_review_df, 100), "Review_Topic_03_Insurance.csv", row.names = FALSE, fileEncoding = "UTF-8")
+
+# 6. R 콘솔에서 상위 5개 제목 즉시 확인
+print("--- Topic 03 (Insurance & Risk) 상위 5개 특허 ---")
+print(head(t3_review_df$Title, 5))
+
+# 1. 20개 토픽 모델에서 18번 토픽의 문서별 비중(theta) 추출
+# final_stm_20_adj$theta의 18번째 열을 가져옵니다.
+theta_t18 <- final_stm_20_adj$theta[, 18]
+
+# 2. 메타데이터(out3$meta)에 18번 토픽 비중 컬럼 추가
+t18_docs <- out3$meta
+t18_docs$Topic_18_Proportion <- theta_t18
+
+# 3. 18번 토픽 비중이 높은 순서대로 내림차순 정렬
+# 해당 주제와 가장 관련성이 높은 핵심 특허들이 상단에 배치됩니다.
+t18_docs_sorted <- t18_docs[order(-t18_docs$Topic_18_Proportion), ]
+
+# 4. 리뷰용 핵심 컬럼 선택 (비중, 제목, 요약, 연도, 국가)
+t18_review_df <- t18_docs_sorted[, c("Topic_18_Proportion", "Title", "Abstract", "Publication.Year", "Origin_Country")]
+
+# 5. 상위 100개 특허를 CSV 파일로 저장
+# 파일명: Review_Topic_18_Insurance.csv
+write.csv(head(t18_review_df, 100), "Review_Topic_18_Insurance.csv", row.names = FALSE, fileEncoding = "UTF-8")
+
+# 6. R 콘솔에서 상위 5개 제목 즉시 확인
+print("--- Topic 18 (Insurance & Risk) 상위 5개 특허 ---")
+print(head(t18_review_df$Title, 5))
+
+
+# 1. 20개 토픽 모델에서 14번 토픽의 문서별 비중(theta) 추출
+# final_stm_20_adj$theta의 14번째 열을 가져옵니다.
+theta_t14 <- final_stm_20_adj$theta[, 14]
+
+# 2. 메타데이터(out3$meta)에 14번 토픽 비중 컬럼 추가
+t14_docs <- out3$meta
+t14_docs$Topic_14_Proportion <- theta_t14
+
+# 3. 14번 토픽 비중이 높은 순서대로 내림차순 정렬
+# 해당 주제와 가장 관련성이 높은 핵심 특허들이 상단에 배치됩니다.
+t14_docs_sorted <- t14_docs[order(-t14_docs$Topic_14_Proportion), ]
+
+# 4. 리뷰용 핵심 컬럼 선택 (비중, 제목, 요약, 연도, 국가)
+t14_review_df <- t14_docs_sorted[, c("Topic_14_Proportion", "Title", "Abstract", "Publication.Year", "Origin_Country")]
+
+# 5. 상위 100개 특허를 CSV 파일로 저장
+# 파일명: Review_Topic_18_Insurance.csv
+write.csv(head(t14_review_df, 100), "Review_Topic_14_Insurance.csv", row.names = FALSE, fileEncoding = "UTF-8")
+
+# 6. R 콘솔에서 상위 5개 제목 즉시 확인
+print("--- Topic 14 (Insurance & Risk) 상위 5개 특허 ---")
+print(head(t18_review_df$Title, 5))
+
+# 최초 1회만 설치
+install.packages("remotes")  # 없으면 먼저 설치
+remotes::install_github("ricardo-bion/ggradar")
+install.packages("dplyr")
+install.packages("tidyr")
+install.packages("ggplot2")
+install.packages("ggradar")
+save.image("STM_full_workspace.RData")
+save(final_stm_20_adj, file = "STM_final_model.RData")
+save(out3, file = "STM_processed_data.RData")
+# 작업 폴더 먼저 맞추고
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# 전체 복구
+load("최종.RData")
+# ==========================================
+# 0. 패키지
+# ==========================================
+# 별도 설치 필요 없음
+# final_stm_20_adj 모델이 이미 메모리에 있다고 가정
+
+# ==========================================
+# 1. 토픽 비중(theta) 추출
+# ==========================================
+theta_mat <- final_stm_20_adj$theta
+K <- ncol(theta_mat)
+print(paste("토픽 수:", K))
+
+# ==========================================
+# 2. 토픽 간 상관행렬 계산
+# ==========================================
+topic_cor <- cor(theta_mat)
+topic_dist <- as.dist(1 - topic_cor)
+
+# ==========================================
+# 3. 계층적 군집화
+# ==========================================
+hc_topics <- hclust(topic_dist, method = "complete")
+
+# ==========================================
+# 4. k개 군집용 cut height 계산 함수
+# ==========================================
+get_cut_height <- function(hc, k){
+  n <- length(hc$order)
+  if(k < 2 || k > n){
+    stop("k는 2 이상, 토픽 수 이하만 가능합니다.")
+  }
+  sort(hc$height, decreasing = TRUE)[k - 1]
+}
+
+# 2개 군집 높이
+h2 <- get_cut_height(hc_topics, 2)
+
+# 5개 군집 높이
+h5 <- get_cut_height(hc_topics, 5)
+
+print(paste("2개 군집 cut height:", round(h2, 3)))
+print(paste("5개 군집 cut height:", round(h5, 3)))
+
+# ==========================================
+# 5. 화면에 덴드로그램 그리기 (선 제외)
+# ==========================================
+plot(hc_topics,
+     main = "Cluster Dendrogram",
+     xlab = "",
+     sub = "",
+     ylab = "Height",
+     cex = 0.8)
+
+# 기존의 abline(h = h2...) 및 text(...) 코드를 삭제했습니다.
+
+# ==========================================
+# 6. PDF 파일로 저장 (선 제외)
+# ==========================================
+pdf("STM_topic_dendrogram_clean.pdf", width = 10, height = 7)
+
+plot(hc_topics,
+     main = "Cluster Dendrogram",
+     xlab = "",
+     sub = "",
+     ylab = "Height",
+     cex = 0.8)
+
+# PDF 저장 시에도 선과 라벨을 넣지 않습니다.
+
+dev.off()
+
+print("✅ 저장 완료: STM_topic_dendrogram_clean.pdf")
+# ==========================================
+# 7. PNG 파일로 저장 (고해상도 설정)
+# ==========================================
+
+# 파일명, 가로/세로 크기(픽셀), 해상도(300dpi) 설정
+png("STM_topic_dendrogram_clean.png", width = 2400, height = 1800, res = 300)
+
+plot(hc_topics,
+     main = "Cluster Dendrogram",
+     xlab = "",
+     sub = "",
+     ylab = "Height",
+     cex = 0.8)
+
+dev.off()
+
+print("✅ 저장 완료: STM_topic_dendrogram_clean.png")
+# ==========================================
+# 8. 관련 수치 데이터 CSV 저장
+# ==========================================
+
+# 1) 토픽 간 상관행렬 저장 (Topic Correlation Matrix)
+# 어떤 토픽끼리 상관관계가 높은지 한눈에 볼 수 있습니다.
+write.csv(topic_cor, "topic_correlation_matrix.csv", row.names = TRUE)
+
+
+# 2) 덴드로그램 병합 정보 저장 (Merge & Height)
+# 어느 단계에서 어떤 토픽이 묶였는지, 그때의 높이(거리)는 얼마인지 저장합니다.
+hc_data <- data.frame(
+  Step = 1:nrow(hc_topics$merge),
+  Left_Node = hc_topics$merge[,1],
+  Right_Node = hc_topics$merge[,2],
+  Height = hc_topics$height
+)
+write.csv(hc_data, "dendrogram_merge_info.csv", row.names = FALSE)
+
+# =========================================================
+# 1. 8개 클러스터 체계 기반 메가 클러스터 재설정 (표 내용 반영)
+# =========================================================
+mega_cluster_map <- rep(NA, 20)
+
+# A: 기업 재무 및 회계 관리
+mega_cluster_map[c(4, 11)] <- "A"
+# B: 맞춤형 보험 및 타겟 식별
+mega_cluster_map[c(3, 18)] <- "B"
+# C: AI 기반 신용/투자 분석
+mega_cluster_map[c(9, 13, 17)] <- "C"
+# D: 블록체인 기반 에너지 금융
+mega_cluster_map[c(14, 19)] <- "D"
+# E: 블록체인 및 디지털 자산
+mega_cluster_map[c(1, 6, 8, 12)] <- "E"
+# F: 보안 인증 및 규제 컴플라이언스
+mega_cluster_map[c(7, 15)] <- "F"
+# G: 뱅킹 및 대금 정산
+mega_cluster_map[c(5, 10)] <- "G"
+# H: O2O 상거래 및 간편 결제
+mega_cluster_map[c(2, 16, 20)] <- "H"
+
+# =========================================================
+# 2. 네트워크 분석용 라이브러리 및 데이터 준비
+# =========================================================
+library(stm)
+library(igraph)
+
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+# 상관관계 계산 (임계치 0.15)
+topic_corr_obj <- topicCorr(final_stm_20_adj)
+corr_mat <- if (!is.null(topic_corr_obj$posadj)) topic_corr_obj$posadj else topic_corr_obj$cor
+K <- 20
+colnames(corr_mat) <- rownames(corr_mat) <- paste0("T", 1:K)
+
+threshold <- 0.15
+adj_mat <- corr_mat
+adj_mat[adj_mat < threshold] <- 0
+diag(adj_mat) <- 0
+
+g <- graph_from_adjacency_matrix(adj_mat, mode = "undirected", weighted = TRUE)
+all_topic_names <- paste0("T", 1:K)
+missing_nodes <- setdiff(all_topic_names, V(g)$name)
+if (length(missing_nodes) > 0) g <- add_vertices(g, nv = length(missing_nodes), name = missing_nodes)
+g <- permute(g, match(all_topic_names, V(g)$name))
+
+# 노드 데이터프레임 구축
+theta_mat <- final_stm_20_adj$theta
+topic_prevalence <- colMeans(theta_mat)
+node_df <- data.frame(
+  topic = paste0("T", 1:K),
+  prevalence = topic_prevalence,
+  cluster_group = mega_cluster_map,
+  stringsAsFactors = FALSE
+)
+
+# 중심성(Betweenness) 계산 및 추가
+node_df$betweenness <- betweenness(g, normalized = TRUE)
+
+# =========================================================
+# 3. 색상 설정 (사진 속 지정된 HEX 코드 적용)
+# =========================================================
+cluster_levels <- c("A", "B", "C", "D", "E", "F", "G", "H")
+cluster_colors <- c("#AEC6CF", "#FFD1BA", "#D8BFD8", "#C1E1C1", 
+                    "#FDFD96", "#B0C4DE", "#AFEEEE", "#FFB6C1")
+names(cluster_colors) <- cluster_levels
+
+node_df$color <- cluster_colors[node_df$cluster_group]
+
+# 범례에 표시할 구체적인 라벨
+legend_labels <- c(
+  "기업 재무 및 회계 관리", "맞춤형 보험 및 타겟 식별",
+  "AI 기반 신용/투자 분석", "블록체인 기반 에너지 금융",
+  "블록체인 및 디지털 자산", "보안 인증 및 규제 컴플라이언스",
+  "뱅킹 및 대금 정산", "O2O 상거래 및 간편 결제"
+)
+
+# =========================================================
+# 4. 시각화 속성 설정 (라벨 및 선 강도 조절, 에러 방지 반영)
+# =========================================================
+
+# 1) 노드 크기 계산
+node_df$node_size <- 12 + (node_df$prevalence - min(node_df$prevalence)) * 23 / (max(node_df$prevalence) - min(node_df$prevalence))
+
+# 2) 노드 속성 설정
+V(g)$size <- node_df$node_size
+V(g)$color <- node_df$color
+V(g)$label <- paste0("T", 1:K) 
+V(g)$label.cex <- 0.8
+V(g)$label.color <- "black"
+V(g)$frame.color <- "gray40"
+
+# 3) 엣지(선) 굵기 및 진하기 설정 (NaN 에러 방지 처리)
+if (ecount(g) > 0) {
+  min_w <- min(E(g)$weight)
+  max_w <- max(E(g)$weight)
+  
+  if (min_w == max_w) {
+    # 모든 선의 가중치가 동일하거나 선이 1개뿐인 경우 기본값 적용
+    E(g)$width <- 2
+    E(g)$color <- rgb(0.4, 0.4, 0.4, alpha = 0.5)
+  } else {
+    # 가중치가 다양할 경우 0 ~ 1 사이로 정규화
+    weight_norm <- (E(g)$weight - min_w) / (max_w - min_w)
+    
+    # 선 굵기 (0.5 ~ 4.5)
+    E(g)$width <- 0.5 + (weight_norm * 4) 
+    
+    # 선 투명도 (0.15 ~ 0.85)
+    alpha_values <- 0.15 + (weight_norm * 0.7)
+    
+    # 선 색상 적용
+    E(g)$color <- rgb(0.4, 0.4, 0.4, alpha = alpha_values)
+  }
+}
+# =========================================================
+# 5. 그래프 파일 저장 (PNG & PDF)
+# =========================================================
+set.seed(2026)
+lay <- layout_with_fr(g, niter = 1000)
+
+# 1) PNG 저장
+png(filename = "STM_Network_8_Clusters.png", width = 2800, height = 2000, res = 300)
+par(mar = c(1, 1, 3, 1))
+plot(g, layout = lay, main = "FinTech Technology Structure: 8-Cluster Map")
+legend("topleft", legend = legend_labels, pt.bg = cluster_colors, 
+       pch = 21, pt.cex = 1.8, bty = "n", cex = 0.9, title = "Clusters")
+dev.off()
+
+# 2) PDF 저장
+pdf("STM_Network_8_Clusters.pdf", width = 11, height = 8)
+par(mar = c(1, 1, 3, 1))
+plot(g, layout = lay, main = "FinTech Technology Structure: 8-Cluster Map")
+legend("topleft", legend = legend_labels, pt.bg = cluster_colors, 
+       pch = 21, pt.cex = 1.5, bty = "n", cex = 0.8, title = "Clusters")
+dev.off()
+
+print("✅ 시각화 이미지 저장 완료: STM_Network_8_Clusters.png / pdf")
+
+# =========================================================
+# 6. 그래프 관련 수치 데이터 CSV로 전체 추출
+# =========================================================
+
+# 1) 노드(토픽) 속성 데이터 저장 (토픽 비중, 중심성, 소속 클러스터 등)
+write.csv(node_df[order(as.numeric(gsub("T", "", node_df$topic))), ], 
+          "Network_Nodes_Info.csv", row.names = FALSE)
+
+# 2) 엣지(연결선) 데이터 저장 (어떤 토픽끼리 연결되었고 가중치가 얼마인지)
+edge_df <- as_data_frame(g, what = "edges")
+write.csv(edge_df, "Network_Edges_Info.csv", row.names = FALSE)
+
+# 3) 중심성(Betweenness) 기준 정렬 데이터
+centrality_sorted <- node_df[order(-node_df$betweenness), ]
+write.csv(centrality_sorted, "Centrality_8_Clusters_FULL.csv", row.names = FALSE)
+write.csv(head(centrality_sorted, 3), "Top3_Betweenness_Topics.csv", row.names = FALSE)
+
+print("✅ 그래프 관련 수치 데이터 CSV 저장 완료")
+
+# =========================================================
+# 핀테크 특허 STM 분석: 8개 클러스터 시계열 분석 (최종 수정본)
+# 반영 내역: 
+#   - PDF는 원래의 깔끔한 기본 비율로 저장
+#   - PNG는 해상도(300dpi)에 맞춰 글씨 크기만 별도로 확대하여 저장
+#   - 2026년 제외, 8개 클러스터, Y축 통일, 남색 선, 맑은 고딕 적용
+# =========================================================
+
+# ---------------------------------------------------------
+# 0. 패키지 및 폰트 설정
+# ---------------------------------------------------------
+library(stm)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(showtext)
+
+font_add("MalgunGothic", "malgun.ttf")
+showtext_auto()
+
+# ---------------------------------------------------------
+# 1. 데이터 필터링 (2026년 데이터 제외)
+# ---------------------------------------------------------
+keep_idx <- which(out3$meta$Publication.Year < 2026)
+filtered_meta <- out3$meta[keep_idx, ]
+
+# ---------------------------------------------------------
+# 2. 클러스터 정의 (이미지 A~H 분류 반영)
+# ---------------------------------------------------------
+K <- 20
+cluster_map <- character(K)
+
+cluster_map[c(4, 11)] <- "A 기업 재무 및 회계 관리"
+cluster_map[c(3, 18)] <- "B 맞춤형 보험 및 타겟 식별"
+cluster_map[c(9, 13, 17)] <- "C AI 기반 신용/투자 분석"
+cluster_map[c(14, 19)] <- "D 블록체인 기반 에너지 금융"
+cluster_map[c(1, 6, 8, 12)] <- "E 블록체인 및 디지털 자산"
+cluster_map[c(7, 15)] <- "F 보안 인증 및 규제 컴플라이언스"
+cluster_map[c(5, 10)] <- "G 뱅킹 및 대금 정산"
+cluster_map[c(2, 16, 20)] <- "H O2O 상거래 및 간편 결제"
+
+topic_info <- data.frame(
+  topic_num = 1:K,
+  topic_id = paste0("T", 1:K),
+  cluster_label = cluster_map,
+  stringsAsFactors = FALSE
+)
+
+# ---------------------------------------------------------
+# 3. 연도별 평균 비중 계산
+# ---------------------------------------------------------
+theta_filtered <- as.data.frame(final_stm_20_adj$theta[keep_idx, ])
+colnames(theta_filtered) <- paste0("T", 1:K)
+theta_filtered$Publication.Year <- filtered_meta$Publication.Year
+
+topic_year_mean <- theta_filtered %>%
+  pivot_longer(cols = starts_with("T"), names_to = "topic_id", values_to = "topic_prop") %>%
+  group_by(Publication.Year, topic_id) %>%
+  summarise(mean_prop = mean(topic_prop, na.rm = TRUE), .groups = "drop") %>%
+  left_join(topic_info, by = "topic_id")
+
+# ---------------------------------------------------------
+# 4. 클러스터별 합산 데이터 생성
+# ---------------------------------------------------------
+cluster_year_df <- topic_year_mean %>%
+  group_by(Publication.Year, cluster_label) %>%
+  summarise(cluster_prop = sum(mean_prop, na.rm = TRUE), .groups = "drop")
+
+# ---------------------------------------------------------
+# 5. [시각화 기본 설정] PDF용 원래 비율 (글씨 안 키움)
+# ---------------------------------------------------------
+p_final <- ggplot(cluster_year_df, aes(x = Publication.Year, y = cluster_prop, group = cluster_label)) +
+  geom_line(color = "#000080", linewidth = 1.2) +
+  geom_point(color = "#000080", size = 2.5) +
+  facet_wrap(~ cluster_label, ncol = 4) + 
+  scale_x_continuous(breaks = seq(min(cluster_year_df$Publication.Year), 
+                                  max(cluster_year_df$Publication.Year), by = 1)) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  
+  # 기본 테마 (PDF에서 예쁘게 나오는 원래 사이즈)
+  theme_bw(base_family = "MalgunGothic") + 
+  labs(
+    title = "Time-Series Trends by 8 Clusters (2019-2025)",
+    subtitle = "Excluding 2026 Data | Fixed Y-axis Scales",
+    x = "Publication Year",
+    y = "Expected Proportion (%)"
+  ) +
+  theme(
+    strip.background = element_rect(fill = "gray95"),
+    strip.text = element_text(face = "bold", size = 9),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank()
+  )
+
+# ---------------------------------------------------------
+# 6. 결과 파일 맞춤형 저장 (PDF와 PNG 설정 완벽 분리)
+# ---------------------------------------------------------
+
+# 1) PDF 저장: 기본 비율 그대로 저장 (건드리지 않음, 예쁘게 나옴)
+ggsave("Cluster_8_TimeSeries_Final.pdf", plot = p_final, width = 16, height = 9)
+
+# 2) PNG 전용 테마 생성: 거대한 도화지에 맞춰 글씨를 '초대형'으로 뻥튀기
+p_png <- p_final + 
+  theme(
+    plot.title = element_text(size = 55, face = "bold", margin = margin(b=15)),      # 메인 제목 (초대형)
+    plot.subtitle = element_text(size = 35, margin = margin(b=20)),                  # 부제목
+    strip.text = element_text(face = "bold", size = 30),                             # A~H 클러스터 라벨 (대형)
+    axis.title.x = element_text(size = 35, margin = margin(t=15)),                   # X축 제목
+    axis.title.y = element_text(size = 35, margin = margin(r=15)),                   # Y축 제목
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 28),                    # X축 연도 숫자
+    axis.text.y = element_text(size = 28)                                            # Y축 퍼센트 숫자
+  )
+
+# PNG 저장 (초대형 글씨가 적용된 버전)
+ggsave("Cluster_8_TimeSeries_Final.png", plot = p_png, width = 16, height = 9, dpi = 300)
+
+# 3) 그래프 수치 데이터 (CSV) 저장
+cluster_export_data <- cluster_year_df %>%
+  mutate(cluster_prop_pct = round(cluster_prop * 100, 3)) %>%
+  arrange(cluster_label, Publication.Year)
+
+write.csv(cluster_export_data, "Cluster_8_Trend_Values.csv", row.names = FALSE, fileEncoding = "CP949")
+
+print("✅ 저장 완료! PNG의 글씨 크기를 초대형으로 키웠습니다.")
+
+# ---------------------------------------------------------
+# [추가 시각화] 8개 클러스터 연도별 히트맵 (최종 텍스트 정렬본)
+# 수정사항: 1. 타일 내 숫자 제거 / 2. 서브타이틀 제거 / 3. Y축 왼쪽 정렬
+# ---------------------------------------------------------
+
+# 1. Y축 순서 정렬 (A~H 순서로 내려오도록)
+cluster_year_df$cluster_label_rev <- factor(
+  cluster_year_df$cluster_label, 
+  levels = rev(sort(unique(cluster_year_df$cluster_label)))
+)
+
+# 2. 히트맵 기본 뼈대 만들기
+p_heat_base <- ggplot(cluster_year_df, aes(x = Publication.Year, y = cluster_label_rev, fill = cluster_prop)) +
+  geom_tile(color = "white", linewidth = 1.2) + # 타일 사이에 하얀색 테두리
+  
+  # 색상 설정: 남색 테마
+  scale_fill_gradient(low = "#F0F5FA", high = "#000080", 
+                      labels = percent_format(accuracy = 0.1), name = "Proportion") +
+  scale_x_continuous(breaks = seq(min(cluster_year_df$Publication.Year), 
+                                  max(cluster_year_df$Publication.Year), by = 1)) +
+  theme_minimal(base_family = "MalgunGothic") +
+  labs(
+    title = "Yearly Heatmap by 8 Clusters (2019-2025)",
+    # 서브타이틀을 깔끔하게 제거했습니다.
+    x = "Publication Year",
+    y = ""
+  ) +
+  theme(panel.grid = element_blank()) # 배경 격자 제거
+
+# ---------------------------------------------------------
+# 3. PDF용 저장: 원본 비율 (깔끔한 버전)
+# ---------------------------------------------------------
+p_heat_pdf <- p_heat_base + 
+  theme(
+    axis.text.x = element_text(size = 11),
+    # hjust = 0 을 추가하여 Y축 라벨을 왼쪽으로 정렬합니다.
+    axis.text.y = element_text(face = "bold", size = 11, hjust = 0) 
+  )
+
+ggsave("Cluster_8_Heatmap_Final.pdf", plot = p_heat_pdf, width = 12, height = 8)
+
+# ---------------------------------------------------------
+# 4. PNG용 저장: 300dpi 해상도 (초대형 글씨 버전)
+# ---------------------------------------------------------
+p_heat_png <- p_heat_base + 
+  theme(
+    plot.title = element_text(size = 50, face = "bold", margin = margin(b=15)),
+    # 서브타이틀 관련 테마 설정도 함께 제거했습니다.
+    axis.title.x = element_text(size = 35, margin = margin(t=15)),
+    axis.text.x = element_text(size = 28),
+    
+    # hjust = 0 을 추가하여 Y축 라벨을 왼쪽으로 정렬합니다.
+    axis.text.y = element_text(face = "bold", size = 28, hjust = 0),
+    
+    # 우측 범례(Legend) 크기 대폭 확대
+    legend.title = element_text(size = 28, face = "bold", margin = margin(b=15)),
+    legend.text = element_text(size = 22),
+    legend.key.height = unit(2.5, "cm"),
+    legend.key.width = unit(1.2, "cm")
+  )
+
+ggsave("Cluster_8_Heatmap_Final.png", plot = p_heat_png, width = 16, height = 9, dpi = 300)
+
+print("✅ 서브타이틀 제거 및 Y축 라벨 왼쪽 정렬 완료!")
+
+
+
+# =========================================================
+# 외생변수 활용(사후분석) : 20개 토픽 시계열 동향 분석
+# [수정 사항] 
+# 1) 선 그래프(Facet) 꺾은선 두께 대폭 축소 (얇게)
+# 2) PDF: 기본(작은) 글씨 크기로 단정하게 저장
+# 3) PNG: 글씨 크기를 아주 크게 설정하여 별도 저장
+# =========================================================
+
+# ---------------------------------------------------------
+# 0. 패키지 로드
+# ---------------------------------------------------------
+library(stm)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(stringr)
+
+# ---------------------------------------------------------
+# 1. 작업 폴더 설정 및 객체 확인
+# ---------------------------------------------------------
+setwd("C:/Users/gram/Documents/핀테크 특허 분석/k찾기")
+
+if (!exists("final_stm_20_adj")) stop("final_stm_20_adj 객체가 없습니다.")
+if (!exists("out3")) stop("out3 객체가 없습니다.")
+
+K <- ncol(final_stm_20_adj$theta)
+topic_ids <- paste0("T", 1:K)
+
+# ---------------------------------------------------------
+# 2. estimateEffect 적합 (원본 meta 유지)
+# ---------------------------------------------------------
+effect_time <- estimateEffect(
+  1:K ~ s(Publication.Year),
+  stmobj = final_stm_20_adj,
+  metadata = out3$meta,
+  uncertainty = "Global"
+)
+
+save(effect_time, file = "STM_estimateEffect_time.RData")
+
+# ---------------------------------------------------------
+# 3. 연도별 토픽 평균 비중 계산 - 2026년 제외 필터링
+# ---------------------------------------------------------
+theta_df <- as.data.frame(final_stm_20_adj$theta)
+colnames(theta_df) <- topic_ids
+theta_df$Publication.Year <- out3$meta$Publication.Year
+
+topic_year_mean <- theta_df %>%
+  pivot_longer(
+    cols = starts_with("T"),
+    names_to = "topic_id",
+    values_to = "topic_prop"
+  ) %>%
+  group_by(Publication.Year, topic_id) %>%
+  summarise(mean_prop = mean(topic_prop, na.rm = TRUE), .groups = "drop") %>%
+  filter(Publication.Year < 2026) %>% 
+  mutate(topic_id = factor(topic_id, levels = topic_ids))
+
+year_seq <- sort(unique(topic_year_mean$Publication.Year))
+
+write.csv(topic_year_mean, "Topic_Yearly_Mean_Values_Filtered.csv", row.names = FALSE)
+
+# ---------------------------------------------------------
+# 4. 전체 토픽 연도별 히트맵
+# ---------------------------------------------------------
+p_heatmap_base <- ggplot(topic_year_mean, aes(x = Publication.Year, y = topic_id, fill = mean_prop)) +
+  geom_tile(color = "white", linewidth = 0.3) +
+  scale_x_continuous(breaks = year_seq) +
+  scale_y_discrete(limits = rev) + # T1이 위로 가도록
+  scale_fill_gradient(low = "gray95", high = "darkblue", labels = percent_format(accuracy = 0.1)) +
+  labs(title = "Yearly Topic Proportion Heatmap", 
+       x = "Year", y = "Topic ID", fill = "Proportion")
+
+# [PDF] 글씨 작게 (base_size = 11)
+p_heatmap_pdf <- p_heatmap_base + theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("All_Topics_Heatmap.pdf", plot = p_heatmap_pdf, width = 10, height = 8)
+
+# [PNG] 글씨 엄청 크게 (base_size = 26)
+p_heatmap_png <- p_heatmap_base + theme_minimal(base_size = 26) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(face = "bold", size = 30),
+        legend.key.height = unit(1.5, "cm"))
+ggsave("All_Topics_Heatmap.png", plot = p_heatmap_png, width = 14, height = 10, dpi = 300)
+
+# ---------------------------------------------------------
+# 5. 전체 토픽 선그래프 Facet (꺾은선 얇게)
+# ---------------------------------------------------------
+# linewidth = 0.5 로 얇게 변경
+p_line_base <- ggplot(topic_year_mean, aes(x = Publication.Year, y = mean_prop)) +
+  geom_line(color = "navy", linewidth = 0.5) + 
+  geom_point(size = 1.2) +
+  facet_wrap(~ topic_id, ncol = 4) + # Y축 완전 동일하게 고정됨
+  scale_x_continuous(breaks = year_seq) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(title = "Temporal Trends of All Topics", 
+       x = "Year", y = "Mean Topic Proportion")
+
+# [PDF] 글씨 작게 (base_size = 11)
+p_line_pdf <- p_line_base + theme_bw(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 8),
+        strip.background = element_rect(fill = "gray90"))
+ggsave("All_Topics_Trends_Facet.pdf", plot = p_line_pdf, width = 15, height = 12)
+
+# [PNG] 글씨 엄청 크게 (base_size = 24)
+p_line_png <- p_line_base + theme_bw(base_size = 24) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 16),
+        axis.text.y = element_text(size = 16),
+        strip.text = element_text(size = 20, face = "bold"),
+        plot.title = element_text(face = "bold", size = 32),
+        strip.background = element_rect(fill = "gray90"))
+ggsave("All_Topics_Trends_Facet.png", plot = p_line_png, width = 18, height = 14, dpi = 300)
+
+# ---------------------------------------------------------
+# 6. 연도별 상위 5개 토픽 정리 (CSV)
+# ---------------------------------------------------------
+top5_table <- topic_year_mean %>%
+  group_by(Publication.Year) %>%
+  slice_max(order_by = mean_prop, n = 5) %>%
+  arrange(Publication.Year, desc(mean_prop))
+
+write.csv(top5_table, "Top5_Topics_Per_Year.csv", row.names = FALSE)
+
+# ---------------------------------------------------------
+# 7. 개별 토픽 95% CI 그래프 
+# ---------------------------------------------------------
+dir.create("Individual_Topic_Plots", showWarnings = FALSE)
+
+for (i in 1:K) {
+  fname <- paste0("Individual_Topic_Plots/Topic_", str_pad(i, 2, pad = "0"))
+  
+  # --- [PNG] 글씨 엄청 크게 (pointsize = 26) ---
+  png(paste0(fname, ".png"), width = 12, height = 8, units = "in", res = 300, pointsize = 26)
+  par(mar = c(5, 5, 4, 2) + 0.1)
+  plot(effect_time, "Publication.Year", method = "continuous", topics = i,
+       main = paste0("Topic ", i), xlab = "Year", ylab = "Expected Proportion",
+       xaxt = "n", ci.level = 0.95,
+       xlim = c(min(year_seq), max(year_seq)))
+  axis(1, at = year_seq, labels = year_seq)
+  dev.off()
+  
+  # --- [PDF] 글씨 작게 (pointsize = 11) ---
+  pdf(paste0(fname, ".pdf"), width = 8, height = 6, pointsize = 11)
+  par(mar = c(5, 4, 4, 2) + 0.1)
+  plot(effect_time, "Publication.Year", method = "continuous", topics = i,
+       main = paste0("Topic ", i), xlab = "Year", ylab = "Expected Proportion",
+       xaxt = "n", ci.level = 0.95,
+       xlim = c(min(year_seq), max(year_seq)))
+  axis(1, at = year_seq, labels = year_seq)
+  dev.off()
+}
+
+cat("\n====================================================\n")
+cat("✅ 시각화 완료!\n")
+cat("- 꺾은선 두께를 얇게 줄였습니다 (linewidth = 0.5).\n")
+cat("- PDF는 깔끔하게 작은 글씨로 저장되었습니다.\n")
+cat("- PNG는 텍스트를 대폭 키워 시원하게 보이도록 분리 저장했습니다.\n")
+cat("====================================================\n")
+# 필요한 라이브러리 로드
+library(ggplot2)
+library(dplyr)
+library(tidytext)
+
+# [1] 데이터 추출: 각 토픽의 평균 비중 계산
+theta_mean <- colMeans(final_stm_20_adj$theta)
+
+# 데이터를 데이터프레임으로 만들면서, 각 토픽이 어느 클러스터에 속하는지 매핑합니다.
+topic_data <- data.frame(
+  topic_num = 1:20, # 토픽 번호 (매핑용)
+  topic = paste0("T", 1:20), # <--- 수정된 부분 ("Topic 1" -> "T1")
+  proportion = theta_mean
+) %>%
+  mutate(
+    # 토픽 번호에 따라 클러스터(A~H) 할당
+    Cluster = case_when(
+      topic_num %in% c(4, 11) ~ "A",
+      topic_num %in% c(3, 18) ~ "B",
+      topic_num %in% c(9, 13, 17) ~ "C",
+      topic_num %in% c(14, 19) ~ "D",
+      topic_num %in% c(1, 6, 8, 12) ~ "E",
+      topic_num %in% c(7, 15) ~ "F",
+      topic_num %in% c(5, 10) ~ "G",
+      topic_num %in% c(2, 16, 20) ~ "H"
+    )
+  )
+
+# 사진에 제공된 클러스터별 HEX 색상 코드 정의
+cluster_colors <- c(
+  "A" = "#AEC6CF",
+  "B" = "#FFD1BA",
+  "C" = "#D8BFD8",
+  "D" = "#C1E1C1",
+  "E" = "#FDFD96",
+  "F" = "#B0C4DE",
+  "G" = "#AFEEEE",
+  "H" = "#FFB6C1"
+)
+
+# [2] 시각화 (ggplot2)
+p1 <- ggplot(topic_data, aes(x = reorder(topic, proportion), y = proportion, fill = Cluster)) +
+  geom_col(width = 0.7) +  
+  scale_fill_manual(values = cluster_colors) +  # 지정한 클러스터 색상 적용
+  coord_flip() +                                # 가로형 그래프로 전환
+  labs(
+    title = "Top Topics by Expected Topic Proportions",
+    subtitle = "IP5 FinTech Patent Analysis (K=20)",
+    x = "Topics",
+    y = "Expected Topic Proportions",
+    fill = "Cluster"                            # 범례 제목
+  ) +
+  theme_minimal() +                             # 깔끔한 테마 적용
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(size = 10),
+    legend.position = "right"                   # 범례를 오른쪽에 배치
+  )
+
+# [3] 그래프 출력
+print(p1)
+
+# [4] 파일 저장 (PNG 형식, 고해상도)
+ggsave("TOPIC_PROPORTION_K20_Colored.png", plot = p1, width = 8, height = 10, dpi = 300)
+# 필요한 라이브러리 로드
+
+# 필요한 라이브러리 로드
+library(ggplot2)
+library(dplyr)
+
+# [1] 데이터 전처리: 이전 단계의 topic_data를 활용해 클러스터별 비중 합산
+cluster_data <- topic_data %>%
+  group_by(Cluster) %>%
+  summarise(total_proportion = sum(proportion)) %>%
+  ungroup()
+
+# 사진에 제공된 클러스터별 HEX 색상 코드 정의
+cluster_colors <- c(
+  "A" = "#AEC6CF",
+  "B" = "#FFD1BA",
+  "C" = "#D8BFD8",
+  "D" = "#C1E1C1",
+  "E" = "#FDFD96",
+  "F" = "#B0C4DE",
+  "G" = "#AFEEEE",
+  "H" = "#FFB6C1"
+)
+
+# [2] 시각화 (ggplot2) - 세로형 막대 그래프 (테두리 제거)
+p2 <- ggplot(cluster_data, aes(x = Cluster, y = total_proportion, fill = Cluster)) +
+  geom_col(width = 0.6) +                                # color 속성을 제거하여 테두리 선 없앰
+  scale_fill_manual(values = cluster_colors) +           # 지정한 클러스터 색상 적용
+  labs(
+    title = "Expected Proportions by Mega Cluster",
+    subtitle = "IP5 FinTech Patent Analysis",
+    x = "Mega Cluster",
+    y = "Total Expected Proportion"
+  ) +
+  theme_minimal() +                             
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title.x = element_text(face = "bold", margin = margin(t = 10)),
+    axis.text.x = element_text(size = 12, face = "bold"), 
+    legend.position = "none"                              
+  )
+
+# [3] 그래프 출력
+print(p2)
+
+# [4] 파일 저장 (PNG 형식, 고해상도)
+ggsave("CLUSTER_PROPORTION_VERTICAL.png", plot = p2, width = 8, height = 6, dpi = 300)
+# 필요한 라이브러리 로드
+
+# 필요한 라이브러리 로드
+library(ggplot2)
+library(dplyr)
+
+# [1] 데이터 준비 (예시 데이터)
+# ❗ 주의: 실제 가지고 계신 특허수, 피인용수 데이터로 아래 데이터프레임을 교체해야 합니다.
+cluster_summary <- data.frame(
+  Cluster = c("A", "B", "C", "D", "E", "F", "G", "H"),
+  Patent_Count = c(150, 200, 120, 80, 300, 90, 180, 250),    # X축: 특허수 데이터 
+  Citation_Count = c(450, 600, 300, 150, 1200, 200, 500, 800) # Y축: 피인용수 합계 또는 평균
+)
+
+# 사진에 제공된 클러스터별 HEX 색상 코드 정의
+cluster_colors <- c(
+  "A" = "#AEC6CF",
+  "B" = "#FFD1BA",
+  "C" = "#D8BFD8",
+  "D" = "#C1E1C1",
+  "E" = "#FDFD96",
+  "F" = "#B0C4DE",
+  "G" = "#AFEEEE",
+  "H" = "#FFB6C1"
+)
+
+# [2] 지형도 시각화 (산점도)
+p3 <- ggplot(cluster_summary, aes(x = Patent_Count, y = Citation_Count, color = Cluster)) +
+  geom_point(size = 6, alpha = 0.9) +                     # 점은 클러스터 색상 유지
+  geom_text(aes(label = Cluster), 
+            color = "black",                              # 글씨 색상을 검정색으로 고정!
+            vjust = -1.5,                                 
+            size = 6, 
+            fontface = "bold") +
+  scale_color_manual(values = cluster_colors) +           
+  # x축, y축 범위를 점/라벨이 잘리지 않게 살짝 늘려줍니다 (데이터에 맞게 조절 필요)
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2))) + 
+  labs(
+    title = "Cluster Landscape: Patent Count vs. Citations",
+    subtitle = "IP5 FinTech Patent Analysis",
+    x = "Patent Count (특허수)",
+    y = "Citation Count (피인용수)"
+  ) +
+  theme_minimal() +                             
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    axis.title = element_text(face = "bold", size = 12),
+    legend.position = "none"                              # 범례 생략
+  )
+
+# [3] 그래프 출력
+print(p3)
+
+# [4] 파일 저장 (PNG 형식, 고해상도)
+ggsave("CLUSTER_LANDSCAPE.png", plot = p3, width = 8, height = 6, dpi = 300)
+# [5] 그래프에 사용된 수치 데이터를 CSV 파일로 저장
+write.csv(cluster_summary, file = "CLUSTER_LANDSCAPE_DATA.csv", row.names = FALSE)
